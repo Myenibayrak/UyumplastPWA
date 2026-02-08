@@ -15,7 +15,7 @@ END $$;
 
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_status') THEN
-    CREATE TYPE public.order_status AS ENUM ('draft','confirmed','in_production','ready','shipped','delivered','cancelled');
+    CREATE TYPE public.order_status AS ENUM ('draft','confirmed','in_production','ready','shipped','delivered','cancelled','closed');
   END IF;
 END $$;
 
@@ -447,7 +447,7 @@ CREATE POLICY oms_orders_select ON public.orders FOR SELECT TO authenticated
 CREATE POLICY oms_orders_insert ON public.orders FOR INSERT TO authenticated
   WITH CHECK (public.has_any_role(ARRAY['admin','sales']::public.app_role[]));
 CREATE POLICY oms_orders_update ON public.orders FOR UPDATE TO authenticated
-  USING (public.has_any_role(ARRAY['admin','sales']::public.app_role[]));
+  USING (public.has_any_role(ARRAY['admin','sales','accounting']::public.app_role[]));
 CREATE POLICY oms_orders_delete ON public.orders FOR DELETE TO authenticated
   USING (public.has_any_role(ARRAY['admin']::public.app_role[]));
 
@@ -563,7 +563,7 @@ ON CONFLICT DO NOTHING;
 
 -- Default workflow settings
 INSERT INTO public.workflow_settings (name, config) VALUES
-  ('order_flow', '{"statuses":["draft","confirmed","in_production","ready","shipped","delivered","cancelled"],"transitions":{"draft":["confirmed","cancelled"],"confirmed":["in_production","cancelled"],"in_production":["ready","cancelled"],"ready":["shipped","cancelled"],"shipped":["delivered"],"delivered":[],"cancelled":[]}}'::jsonb),
+  ('order_flow', '{"statuses":["draft","confirmed","in_production","ready","shipped","delivered","cancelled","closed"],"transitions":{"draft":["confirmed","cancelled"],"confirmed":["in_production","cancelled"],"in_production":["ready","cancelled"],"ready":["shipped","cancelled","closed"],"shipped":["delivered","closed"],"delivered":["closed"],"cancelled":[],"closed":[]}}'::jsonb),
   ('task_flow', '{"statuses":["pending","in_progress","preparing","ready","done","cancelled"],"transitions":{"pending":["in_progress","cancelled"],"in_progress":["preparing","ready","done","cancelled"],"preparing":["ready","done","cancelled"],"ready":["done","cancelled"],"done":[],"cancelled":[]}}'::jsonb)
 ON CONFLICT (name) DO NOTHING;
 

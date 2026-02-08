@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, requireRole, isAuthError } from "@/lib/auth/guards";
 import { orderCreateSchema } from "@/lib/validations";
 import { canViewFinance, stripFinanceFields } from "@/lib/rbac";
@@ -9,7 +9,7 @@ export async function GET() {
     const auth = await requireAuth();
     if (isAuthError(auth)) return auth;
 
-    const supabase = createServerSupabase();
+    const supabase = createAdminClient();
     const { data, error } = await supabase
       .from("orders")
       .select("*, order_tasks(id, department, status, assigned_to, assignee:profiles!order_tasks_assigned_to_fkey(full_name))")
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const supabase = createServerSupabase();
+  const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("orders")
     .insert({ ...parsed.data, created_by: auth.userId })

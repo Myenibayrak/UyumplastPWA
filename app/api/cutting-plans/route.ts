@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, requireRole, isAuthError } from "@/lib/auth/guards";
 
 export async function GET(request: NextRequest) {
@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   const status = searchParams.get("status");
   const assignedTo = searchParams.get("assigned_to");
 
-  const supabase = createServerSupabase();
+  const supabase = createAdminClient();
   let query = supabase
     .from("cutting_plans")
     .select(`
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
   let body: Record<string, unknown>;
   try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
 
-  const supabase = createServerSupabase();
+  const supabase = createAdminClient();
 
   const planData = {
     order_id: body.order_id,
@@ -66,7 +66,11 @@ export async function POST(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   // Update order status to in_production
-  await supabase.from("orders").update({ status: "in_production" }).eq("id", body.order_id);
+  const { error: orderUpdateError } = await supabase
+    .from("orders")
+    .update({ status: "in_production" })
+    .eq("id", body.order_id);
+  if (orderUpdateError) return NextResponse.json({ error: orderUpdateError.message }, { status: 500 });
 
   // Notify assigned operator
   if (planData.assigned_to) {

@@ -5,7 +5,7 @@ import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel,
   getPaginationRowModel, flexRender, type ColumnDef, type SortingState,
 } from "@tanstack/react-table";
-import type { Order, OrderStatus, Priority, TaskSummary } from "@/lib/types";
+import type { Order, TaskSummary } from "@/lib/types";
 import { ORDER_STATUS_LABELS, PRIORITY_LABELS, ROLE_LABELS, TASK_STATUS_LABELS } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,17 +19,19 @@ interface OrderTableProps {
   canEdit: boolean;
   canClose?: boolean;
   onReload: () => void;
+  onOrderPatched?: (order: Order) => void;
   onNewOrder: () => void;
   onAssignTask: (order: Order) => void;
 }
 
-function InlineCell({ value, field, orderId, type = "text", options, onSaved }: {
+function InlineCell({ value, field, orderId, type = "text", options, onSaved, onPatched }: {
   value: string | number | null;
   field: string;
   orderId: string;
   type?: "text" | "number" | "date" | "select";
   options?: { value: string; label: string }[];
   onSaved: () => void;
+  onPatched?: (order: Order) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(String(value ?? ""));
@@ -39,22 +41,25 @@ function InlineCell({ value, field, orderId, type = "text", options, onSaved }: 
   useEffect(() => { setVal(String(value ?? "")); }, [value]);
   useEffect(() => { if (editing && inputRef.current) inputRef.current.focus(); }, [editing]);
 
-  const save = useCallback(async () => {
-    if (String(value ?? "") === val) { setEditing(false); return; }
+  const save = useCallback(async (nextVal?: string) => {
+    const finalVal = nextVal ?? val;
+    if (String(value ?? "") === finalVal) { setEditing(false); return; }
     setSaving(true);
     try {
       const payload: Record<string, unknown> = {};
-      if (type === "number") payload[field] = val === "" ? null : Number(val);
-      else payload[field] = val || null;
+      if (type === "number") payload[field] = finalVal === "" ? null : Number(finalVal);
+      else payload[field] = finalVal || null;
       const res = await fetch(`/api/orders/${orderId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error("Kayıt hatası");
+      const updated = await res.json();
+      if (onPatched && updated?.id) onPatched(updated as Order);
       onSaved();
     } catch { toast({ title: "Hata", variant: "destructive" }); }
     finally { setSaving(false); setEditing(false); }
-  }, [val, value, field, orderId, type, onSaved]);
+  }, [val, value, field, orderId, type, onSaved, onPatched]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") save();
@@ -83,9 +88,18 @@ function InlineCell({ value, field, orderId, type = "text", options, onSaved }: 
         ref={inputRef as React.RefObject<HTMLSelectElement>}
         className="w-full h-7 text-xs border rounded px-1 bg-white focus:ring-2 focus:ring-blue-300 outline-none"
         value={val}
-        onChange={(e) => { setVal(e.target.value); }}
-        onBlur={save}
+        onChange={(e) => {
+          const next = e.target.value;
+          setVal(next);
+          void save(next);
+        }}
         onKeyDown={handleKeyDown}
+        onBlur={() => {
+          if (!saving) {
+            setVal(String(value ?? ""));
+            setEditing(false);
+          }
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -100,7 +114,7 @@ function InlineCell({ value, field, orderId, type = "text", options, onSaved }: 
       className="w-full h-7 text-xs border rounded px-1 bg-white focus:ring-2 focus:ring-blue-300 outline-none"
       value={val}
       onChange={(e) => setVal(e.target.value)}
-      onBlur={save}
+      onBlur={() => { void save(); }}
       onKeyDown={handleKeyDown}
       onClick={(e) => e.stopPropagation()}
       step={type === "number" ? "0.01" : undefined}
@@ -129,11 +143,12 @@ const priorityBg: Record<string, string> = {
 const STATUS_OPTIONS = Object.entries(ORDER_STATUS_LABELS).map(([v, l]) => ({ value: v, label: l }));
 const PRIORITY_OPTIONS = Object.entries(PRIORITY_LABELS).map(([v, l]) => ({ value: v, label: l }));
 
-export function OrderTable({ orders, showFinance, canEdit, canClose, onReload, onNewOrder, onAssignTask }: OrderTableProps) {
+export function OrderTable({ orders, showFinance, canEdit, canClose, onReload, onOrderPatched, onNewOrder, onAssignTask }: OrderTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState("");
 
   const columns = useMemo<ColumnDef<Order>[]>(() => {
+    const statusOptions = canClose ? STATUS_OPTIONS : STATUS_OPTIONS.filter((o) => o.value !== "closed");
     const cols: ColumnDef<Order>[] = [
       {
         accessorKey: "order_no",
@@ -151,7 +166,7 @@ export function OrderTable({ orders, showFinance, canEdit, canClose, onReload, o
         accessorKey: "customer",
         header: "Müşteri",
         cell: ({ row }) => canEdit ? (
-          <InlineCell value={row.original.customer} field="customer" orderId={row.original.id} onSaved={onReload} />
+          <InlineCell value={row.original.customer} field="customer" orderId={row.original.id} onSaved={onReload} onPatched={onOrderPatched} />
         ) : row.original.customer,
         size: 140,
       },
@@ -159,7 +174,7 @@ export function OrderTable({ orders, showFinance, canEdit, canClose, onReload, o
         accessorKey: "product_type",
         header: "Ürün",
         cell: ({ row }) => canEdit ? (
-          <InlineCell value={row.original.product_type} field="product_type" orderId={row.original.id} onSaved={onReload} />
+          <InlineCell value={row.original.product_type} field="product_type" orderId={row.original.id} onSaved={onReload} onPatched={onOrderPatched} />
         ) : row.original.product_type,
         size: 120,
       },
@@ -167,7 +182,7 @@ export function OrderTable({ orders, showFinance, canEdit, canClose, onReload, o
         accessorKey: "micron",
         header: "Mikron",
         cell: ({ row }) => canEdit ? (
-          <InlineCell value={row.original.micron} field="micron" orderId={row.original.id} type="number" onSaved={onReload} />
+          <InlineCell value={row.original.micron} field="micron" orderId={row.original.id} type="number" onSaved={onReload} onPatched={onOrderPatched} />
         ) : (row.original.micron ?? "—"),
         size: 70,
       },
@@ -175,7 +190,7 @@ export function OrderTable({ orders, showFinance, canEdit, canClose, onReload, o
         accessorKey: "width",
         header: "En",
         cell: ({ row }) => canEdit ? (
-          <InlineCell value={row.original.width} field="width" orderId={row.original.id} type="number" onSaved={onReload} />
+          <InlineCell value={row.original.width} field="width" orderId={row.original.id} type="number" onSaved={onReload} onPatched={onOrderPatched} />
         ) : (row.original.width ?? "—"),
         size: 70,
       },
@@ -183,7 +198,7 @@ export function OrderTable({ orders, showFinance, canEdit, canClose, onReload, o
         accessorKey: "quantity",
         header: "Miktar",
         cell: ({ row }) => canEdit ? (
-          <InlineCell value={row.original.quantity} field="quantity" orderId={row.original.id} type="number" onSaved={onReload} />
+          <InlineCell value={row.original.quantity} field="quantity" orderId={row.original.id} type="number" onSaved={onReload} onPatched={onOrderPatched} />
         ) : (row.original.quantity ? `${row.original.quantity}` : "—"),
         size: 80,
       },
@@ -191,7 +206,7 @@ export function OrderTable({ orders, showFinance, canEdit, canClose, onReload, o
         accessorKey: "unit",
         header: "Brm",
         cell: ({ row }) => canEdit ? (
-          <InlineCell value={row.original.unit} field="unit" orderId={row.original.id} onSaved={onReload} />
+          <InlineCell value={row.original.unit} field="unit" orderId={row.original.id} onSaved={onReload} onPatched={onOrderPatched} />
         ) : row.original.unit,
         size: 50,
       },
@@ -199,7 +214,7 @@ export function OrderTable({ orders, showFinance, canEdit, canClose, onReload, o
         accessorKey: "trim_width",
         header: "Kes.Eni",
         cell: ({ row }) => canEdit ? (
-          <InlineCell value={row.original.trim_width} field="trim_width" orderId={row.original.id} type="number" onSaved={onReload} />
+          <InlineCell value={row.original.trim_width} field="trim_width" orderId={row.original.id} type="number" onSaved={onReload} onPatched={onOrderPatched} />
         ) : (row.original.trim_width ?? "—"),
         size: 70,
       },
@@ -253,7 +268,7 @@ export function OrderTable({ orders, showFinance, canEdit, canClose, onReload, o
         cell: ({ row }) => {
           const s = row.original.status;
           if (canEdit) return (
-            <InlineCell value={s} field="status" orderId={row.original.id} type="select" options={STATUS_OPTIONS} onSaved={onReload} />
+            <InlineCell value={s} field="status" orderId={row.original.id} type="select" options={statusOptions} onSaved={onReload} onPatched={onOrderPatched} />
           );
           return <Badge className={`text-[10px] ${statusBg[s] || ""}`}>{ORDER_STATUS_LABELS[s]}</Badge>;
         },
@@ -265,7 +280,7 @@ export function OrderTable({ orders, showFinance, canEdit, canClose, onReload, o
         cell: ({ row }) => {
           const p = row.original.priority;
           if (canEdit) return (
-            <InlineCell value={p} field="priority" orderId={row.original.id} type="select" options={PRIORITY_OPTIONS} onSaved={onReload} />
+            <InlineCell value={p} field="priority" orderId={row.original.id} type="select" options={PRIORITY_OPTIONS} onSaved={onReload} onPatched={onOrderPatched} />
           );
           return <span className={priorityBg[p]}>{PRIORITY_LABELS[p]}</span>;
         },
@@ -275,7 +290,7 @@ export function OrderTable({ orders, showFinance, canEdit, canClose, onReload, o
         accessorKey: "ship_date",
         header: "Sevk",
         cell: ({ row }) => canEdit ? (
-          <InlineCell value={row.original.ship_date?.split("T")[0] ?? ""} field="ship_date" orderId={row.original.id} type="date" onSaved={onReload} />
+          <InlineCell value={row.original.ship_date?.split("T")[0] ?? ""} field="ship_date" orderId={row.original.id} type="date" onSaved={onReload} onPatched={onOrderPatched} />
         ) : (row.original.ship_date ? new Date(row.original.ship_date).toLocaleDateString("tr-TR") : "—"),
         size: 100,
       },
@@ -287,7 +302,7 @@ export function OrderTable({ orders, showFinance, canEdit, canClose, onReload, o
           accessorKey: "price",
           header: "Fiyat",
           cell: ({ row }) => canEdit ? (
-            <InlineCell value={row.original.price} field="price" orderId={row.original.id} type="number" onSaved={onReload} />
+            <InlineCell value={row.original.price} field="price" orderId={row.original.id} type="number" onSaved={onReload} onPatched={onOrderPatched} />
           ) : (row.original.price ? `${row.original.price?.toLocaleString("tr-TR")} ${row.original.currency}` : "—"),
           size: 100,
         },
@@ -295,7 +310,7 @@ export function OrderTable({ orders, showFinance, canEdit, canClose, onReload, o
           accessorKey: "payment_term",
           header: "Vade",
           cell: ({ row }) => canEdit ? (
-            <InlineCell value={row.original.payment_term} field="payment_term" orderId={row.original.id} onSaved={onReload} />
+            <InlineCell value={row.original.payment_term} field="payment_term" orderId={row.original.id} onSaved={onReload} onPatched={onOrderPatched} />
           ) : (row.original.payment_term ?? "—"),
           size: 80,
         },
@@ -350,7 +365,12 @@ export function OrderTable({ orders, showFinance, canEdit, canClose, onReload, o
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ status: "closed" }),
                   });
-                  if (res.ok) { toast({ title: "Sipariş kapatıldı" }); onReload(); }
+                  if (res.ok) {
+                    const updated = await res.json();
+                    if (onOrderPatched && updated?.id) onOrderPatched(updated as Order);
+                    toast({ title: "Sipariş kapatıldı" });
+                    onReload();
+                  }
                   else toast({ title: "Hata", variant: "destructive" });
                 }}>
                 Evrak Kes
@@ -363,7 +383,7 @@ export function OrderTable({ orders, showFinance, canEdit, canClose, onReload, o
     }
 
     return cols;
-  }, [showFinance, canEdit, canClose, onReload, onAssignTask]);
+  }, [showFinance, canEdit, canClose, onReload, onAssignTask, onOrderPatched]);
 
   const table = useReactTable({
     data: orders,

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, requireRole, isAuthError } from "@/lib/auth/guards";
 
 export async function POST(request: NextRequest) {
@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "cutting_plan_id, bobbin_label, cut_width, cut_kg zorunlu" }, { status: 400 });
   }
 
-  const supabase = createServerSupabase();
+  const supabase = createAdminClient();
 
   // Get the cutting plan to find order_id and source info
   const { data: plan, error: planErr } = await supabase
@@ -64,10 +64,14 @@ export async function POST(request: NextRequest) {
     if (sourceStock) {
       const newKg = Math.max(0, sourceStock.kg - Number(body.cut_kg));
       const newQty = newKg <= 0 ? 0 : sourceStock.quantity;
-      await supabase.from("stock_items").update({ kg: newKg, quantity: newQty }).eq("id", plan.source_stock_id);
+      const { error: stockUpdateError } = await supabase
+        .from("stock_items")
+        .update({ kg: newKg, quantity: newQty })
+        .eq("id", plan.source_stock_id);
+      if (stockUpdateError) return NextResponse.json({ error: stockUpdateError.message }, { status: 500 });
 
       // Log stock movement: OUT from source
-      await supabase.from("stock_movements").insert({
+      const { error: stockOutMovementError } = await supabase.from("stock_movements").insert({
         stock_item_id: plan.source_stock_id,
         movement_type: "out",
         kg: Number(body.cut_kg),
@@ -78,6 +82,7 @@ export async function POST(request: NextRequest) {
         notes: `Kesim: ${body.bobbin_label}`,
         created_by: auth.userId,
       });
+      if (stockOutMovementError) return NextResponse.json({ error: stockOutMovementError.message }, { status: 500 });
     }
   }
 
@@ -90,7 +95,11 @@ export async function POST(request: NextRequest) {
       .eq("is_order_piece", true);
 
     const totalReady = (orderEntries ?? []).reduce((s: number, e: { cut_kg: number }) => s + e.cut_kg, 0);
-    await supabase.from("orders").update({ ready_quantity: totalReady }).eq("id", plan.order_id);
+    const { error: orderReadyUpdateError } = await supabase
+      .from("orders")
+      .update({ ready_quantity: totalReady })
+      .eq("id", plan.order_id);
+    if (orderReadyUpdateError) return NextResponse.json({ error: orderReadyUpdateError.message }, { status: 500 });
   }
 
   // If it's a leftover piece (not for order), add to stock
@@ -107,7 +116,7 @@ export async function POST(request: NextRequest) {
     }).select().single();
 
     if (newStockItem) {
-      await supabase.from("stock_movements").insert({
+      const { error: stockInMovementError } = await supabase.from("stock_movements").insert({
         stock_item_id: newStockItem.id,
         movement_type: "in",
         kg: Number(body.cut_kg),
@@ -118,15 +127,17 @@ export async function POST(request: NextRequest) {
         notes: `Kesim artığı: ${body.bobbin_label}`,
         created_by: auth.userId,
       });
+      if (stockInMovementError) return NextResponse.json({ error: stockInMovementError.message }, { status: 500 });
     }
   }
 
   // Update cutting plan status to in_progress if it's still planned
-  await supabase
+  const { error: planStatusError } = await supabase
     .from("cutting_plans")
     .update({ status: "in_progress" })
     .eq("id", body.cutting_plan_id)
     .eq("status", "planned");
+  if (planStatusError) return NextResponse.json({ error: planStatusError.message }, { status: 500 });
 
   return NextResponse.json(entry, { status: 201 });
 }

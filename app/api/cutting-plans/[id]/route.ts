@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, requireRole, isAuthError } from "@/lib/auth/guards";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireAuth();
   if (isAuthError(auth)) return auth;
 
-  const supabase = createServerSupabase();
+  const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("cutting_plans")
     .select(`
@@ -33,7 +33,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   let body: Record<string, unknown>;
   try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
 
-  const supabase = createServerSupabase();
+  const supabase = createAdminClient();
 
   const updateData: Record<string, unknown> = {};
   const allowed = ["status", "assigned_to", "source_stock_id", "source_product", "source_micron", "source_width", "source_kg", "target_width", "target_kg", "target_quantity", "notes"];
@@ -62,7 +62,11 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       .eq("is_order_piece", true);
 
     const totalCutKg = (entries ?? []).reduce((s: number, e: { cut_kg: number }) => s + e.cut_kg, 0);
-    await supabase.from("orders").update({ ready_quantity: totalCutKg, status: "ready" }).eq("id", order.id);
+    const { error: readyUpdateError } = await supabase
+      .from("orders")
+      .update({ ready_quantity: totalCutKg, status: "ready" })
+      .eq("id", order.id);
+    if (readyUpdateError) return NextResponse.json({ error: readyUpdateError.message }, { status: 500 });
 
     // Notify order creator (sales)
     await supabase.from("notifications").insert({
@@ -121,7 +125,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   const roleCheck = requireRole(auth, ["admin"]);
   if (roleCheck) return roleCheck;
 
-  const supabase = createServerSupabase();
+  const supabase = createAdminClient();
   const { error } = await supabase.from("cutting_plans").delete().eq("id", params.id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ success: true });

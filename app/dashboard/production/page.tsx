@@ -64,33 +64,52 @@ export default function ProductionPage() {
     });
   }, []);
 
-  const loadPlans = useCallback(async () => {
-    const res = await fetch(`/api/cutting-plans?status=${statusFilter}`);
-    if (res.ok) setPlans(await res.json());
+  const loadPlans = useCallback(async (): Promise<CuttingPlan[]> => {
+    const res = await fetch(`/api/cutting-plans?status=${statusFilter}`, { cache: "no-store" });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const nextPlans = Array.isArray(data) ? (data as CuttingPlan[]) : [];
+    setPlans(nextPlans);
+    return nextPlans;
   }, [statusFilter]);
 
-  const loadPendingOrders = useCallback(async () => {
-    const res = await fetch("/api/orders");
+  const loadPendingOrders = useCallback(async (planList?: CuttingPlan[]) => {
+    const res = await fetch("/api/orders", { cache: "no-store" });
     if (res.ok) {
       const all: Order[] = await res.json();
       const prodOrders = all.filter((o) => (o.source_type === "production" || o.source_type === "both") && !["shipped", "delivered", "cancelled", "closed"].includes(o.status));
-      const planOrderIds = new Set(plans.map((p) => p.order_id));
+      const planOrderIds = new Set((planList ?? plans).map((p) => p.order_id));
       setPendingOrders(prodOrders.filter((o) => !planOrderIds.has(o.id)));
     }
   }, [plans]);
 
-  useEffect(() => { loadPlans(); }, [loadPlans]);
-  useEffect(() => { loadPendingOrders(); }, [loadPendingOrders]);
+  const refreshProgramData = useCallback(async () => {
+    const latestPlans = await loadPlans();
+    await loadPendingOrders(latestPlans);
+  }, [loadPlans, loadPendingOrders]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const loadedPlans = await loadPlans();
+      if (!active) return;
+      await loadPendingOrders(loadedPlans);
+    })();
+    return () => { active = false; };
+  }, [loadPlans, loadPendingOrders]);
 
   const loadOrdersForPlan = async () => {
-    const res = await fetch("/api/orders");
+    const res = await fetch("/api/orders", { cache: "no-store" });
     if (res.ok) {
       const all: Order[] = await res.json();
-      setOrders(all.filter((o) => ["confirmed", "draft", "in_production"].includes(o.status)));
+      setOrders(all.filter((o) =>
+        (o.source_type === "production" || o.source_type === "both")
+        && !["shipped", "delivered", "cancelled", "closed"].includes(o.status)
+      ));
     }
   };
   const loadStockForPlan = async () => {
-    const res = await fetch("/api/stock?category=film");
+    const res = await fetch("/api/stock?category=film", { cache: "no-store" });
     if (res.ok) setStockItems(await res.json());
   };
 
@@ -124,7 +143,7 @@ export default function ProductionPage() {
       setPlanOpen(false);
       setPlanForm({ order_id: "", source_stock_id: "", assigned_to: "", target_width: "", target_kg: "", target_quantity: "1", notes: "" });
       setSpecRows([{ en: "", bant: "", cap: "", firma: "", kg: "" }]);
-      loadPlans();
+      await refreshProgramData();
     } catch (err: unknown) {
       toast({ title: "Hata", description: err instanceof Error ? err.message : "Bilinmeyen", variant: "destructive" });
     } finally { setPlanLoading(false); }
@@ -150,7 +169,7 @@ export default function ProductionPage() {
       if (!res.ok) throw new Error((await res.json()).error || "Hata");
       toast({ title: "Kesim kaydedildi" });
       setCutForm({ bobbin_label: "", cut_width: "", cut_kg: "", cut_quantity: "1", is_order_piece: true, notes: "", machine_no: cutForm.machine_no, firma: "", cap: "", bant: "" });
-      loadPlans();
+      void refreshProgramData();
     } catch (err: unknown) {
       toast({ title: "Hata", description: err instanceof Error ? err.message : "Bilinmeyen", variant: "destructive" });
     } finally { setCutLoading(false); }
@@ -160,7 +179,7 @@ export default function ProductionPage() {
     const res = await fetch(`/api/cutting-plans/${planId}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
     });
-    if (res.ok) { toast({ title: CUTTING_PLAN_STATUS_LABELS[status] }); loadPlans(); }
+    if (res.ok) { toast({ title: CUTTING_PLAN_STATUS_LABELS[status] }); void refreshProgramData(); }
     else toast({ title: "Hata", variant: "destructive" });
   }
 
@@ -201,6 +220,23 @@ export default function ProductionPage() {
           <Badge variant="outline" className="bg-yellow-50">Kesimde: {inProgressCount}</Badge>
           <Badge variant="outline" className="bg-green-50">Tamam: {completedCount}</Badge>
         </div>
+        {activeTab === "program" && (
+          <div className="flex items-center gap-2">
+            <Label className="text-xs text-muted-foreground">Durum</Label>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="h-8 w-[140px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tümü</SelectItem>
+                <SelectItem value="planned">Planlandı</SelectItem>
+                <SelectItem value="in_progress">Kesimde</SelectItem>
+                <SelectItem value="completed">Tamamlandı</SelectItem>
+                <SelectItem value="cancelled">İptal</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <div className="flex-1" />
         {activeTab === "program" && (isManager || isAdmin) && (
           <Button size="sm" className="h-8" onClick={() => { setPlanOpen(true); loadOrdersForPlan(); loadStockForPlan(); }}>

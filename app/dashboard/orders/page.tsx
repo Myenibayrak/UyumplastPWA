@@ -15,7 +15,7 @@ import type { Order, AppRole, Profile } from "@/lib/types";
 import { canViewFinance, canManageOrders } from "@/lib/rbac";
 import { toast } from "@/hooks/use-toast";
 
-const HISTORY_ALLOWED_NAMES = ["Mustafa", "Muhammed", "İmren"];
+const HISTORY_ALLOWED_NAMES = ["mustafa", "muhammed", "imren", "i̇mren", "admin"];
 
 export default function OrdersPage() {
   const [allOrders, setAllOrders] = useState<Order[]>([]);
@@ -34,7 +34,7 @@ export default function OrdersPage() {
 
   const loadOrders = useCallback(async () => {
     try {
-      const res = await fetch("/api/orders");
+      const res = await fetch("/api/orders", { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         setAllOrders(Array.isArray(data) ? data : []);
@@ -62,15 +62,27 @@ export default function OrdersPage() {
     loadOrders();
   }, [loadOrders]);
 
-  const canSeeHistory = role === "admin" || HISTORY_ALLOWED_NAMES.includes(userName);
+  const normalizedUserName = userName.trim().toLowerCase();
+  const canSeeHistory = role === "admin" || HISTORY_ALLOWED_NAMES.some((n) => normalizedUserName.includes(n));
   const canClose = role === "accounting" || role === "admin";
 
   const activeOrders = useMemo(() => allOrders.filter((o) => o.status !== "closed" && o.status !== "cancelled"), [allOrders]);
   const historyOrders = useMemo(() => allOrders.filter((o) => o.status === "closed" || o.status === "cancelled"), [allOrders]);
+  const readyOrdersCount = useMemo(() => {
+    return activeOrders.filter((o) => {
+      const qty = Number(o.quantity || 0);
+      if (qty <= 0) return false;
+      const totalReady = Number(o.stock_ready_kg || 0) + Number(o.production_ready_kg || 0);
+      return totalReady >= qty * 0.95;
+    }).length;
+  }, [activeOrders]);
 
   const orders = activeTab === "active" ? activeOrders : historyOrders;
 
   function handleNew() { setEditOrder(null); setFormOpen(true); }
+  function handleOrderPatched(updated: Order) {
+    setAllOrders((prev) => prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)));
+  }
 
   async function handleAssignTask() {
     if (!taskDialogOrder) return;
@@ -103,9 +115,28 @@ export default function OrdersPage() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="grid gap-2 md:grid-cols-4">
+        <div className="rounded-lg border bg-white p-3 shadow-sm">
+          <p className="text-[11px] text-muted-foreground">Toplam Sipariş</p>
+          <p className="text-xl font-bold">{allOrders.length}</p>
+        </div>
+        <div className="rounded-lg border bg-white p-3 shadow-sm">
+          <p className="text-[11px] text-muted-foreground">Aktif</p>
+          <p className="text-xl font-bold text-blue-700">{activeOrders.length}</p>
+        </div>
+        <div className="rounded-lg border bg-white p-3 shadow-sm">
+          <p className="text-[11px] text-muted-foreground">Hazır (&gt;= %95)</p>
+          <p className="text-xl font-bold text-green-700">{readyOrdersCount}</p>
+        </div>
+        <div className="rounded-lg border bg-white p-3 shadow-sm">
+          <p className="text-[11px] text-muted-foreground">Geçmiş</p>
+          <p className="text-xl font-bold text-slate-700">{historyOrders.length}</p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 flex-wrap rounded-lg border bg-white px-3 py-2 shadow-sm">
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "active" | "history")}>
-          <TabsList>
+          <TabsList className="bg-slate-100">
             <TabsTrigger value="active">
               Aktif Siparişler
               <Badge variant="outline" className="ml-1 text-[10px]">{activeOrders.length}</Badge>
@@ -126,6 +157,7 @@ export default function OrdersPage() {
         canEdit={isManager && activeTab === "active"}
         canClose={canClose && activeTab === "active"}
         onReload={loadOrders}
+        onOrderPatched={handleOrderPatched}
         onNewOrder={handleNew}
         onAssignTask={(o) => setTaskDialogOrder(o)}
       />
