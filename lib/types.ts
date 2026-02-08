@@ -256,6 +256,14 @@ export const CUTTING_PLAN_STATUS_LABELS: Record<CuttingPlanStatus, string> = {
   cancelled: "İptal",
 };
 
+export interface CuttingSpec {
+  en: number;
+  bant?: string;
+  cap?: string;
+  firma?: string;
+  kg?: number;
+}
+
 export interface CuttingPlan {
   id: string;
   order_id: string;
@@ -271,6 +279,8 @@ export interface CuttingPlan {
   planned_by: string;
   status: CuttingPlanStatus;
   notes: string | null;
+  cutting_spec: CuttingSpec[];
+  sort_order: number;
   created_at: string;
   updated_at: string;
   order?: Order;
@@ -290,6 +300,11 @@ export interface CuttingEntry {
   cut_quantity: number;
   is_order_piece: boolean;
   entered_by: string;
+  machine_no: string | null;
+  firma: string | null;
+  cap: string | null;
+  bant: string | null;
+  piece_weight: number | null;
   notes: string | null;
   created_at: string;
 }

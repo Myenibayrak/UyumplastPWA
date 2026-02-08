@@ -37,6 +37,11 @@ export async function POST(request: NextRequest) {
     cut_quantity: Number(body.cut_quantity) || 1,
     is_order_piece: body.is_order_piece !== false,
     entered_by: auth.userId,
+    machine_no: body.machine_no || null,
+    firma: body.firma || null,
+    cap: body.cap || null,
+    bant: body.bant || null,
+    piece_weight: body.piece_weight ? Number(body.piece_weight) : null,
     notes: body.notes || null,
   };
 
