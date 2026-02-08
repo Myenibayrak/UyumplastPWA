@@ -12,7 +12,7 @@ export async function GET() {
     const supabase = createServerSupabase();
     const { data, error } = await supabase
       .from("orders")
-      .select("*, order_tasks(id, department, status, assigned_to, assignee:profiles(full_name))")
+      .select("*, order_tasks(id, department, status, assigned_to, assignee:profiles!order_tasks_assigned_to_fkey(full_name))")
       .order("created_at", { ascending: false });
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

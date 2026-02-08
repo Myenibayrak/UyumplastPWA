@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     .select(`
       *,
       order:orders!inner(order_no, customer, product_type, micron, width, quantity, unit, trim_width, ship_date, priority, notes, status),
-      assignee:profiles(id, full_name, role)
+      assignee:profiles!order_tasks_assigned_to_fkey(id, full_name, role)
     `)
     .order("created_at", { ascending: false });
 

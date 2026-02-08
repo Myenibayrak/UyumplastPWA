@@ -11,7 +11,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   const supabase = createServerSupabase();
   const { data, error } = await supabase
     .from("orders")
-    .select("*, order_tasks(*, assignee:profiles(id, full_name, role))")
+    .select("*, order_tasks(*, assignee:profiles!order_tasks_assigned_to_fkey(id, full_name, role))")
     .eq("id", params.id)
     .single();
 
