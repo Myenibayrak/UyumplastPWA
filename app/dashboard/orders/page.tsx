@@ -27,8 +27,17 @@ export default function OrdersPage() {
   const [taskLoading, setTaskLoading] = useState(false);
 
   const loadOrders = useCallback(async () => {
-    const res = await fetch("/api/orders");
-    if (res.ok) setOrders(await res.json());
+    try {
+      const res = await fetch("/api/orders");
+      if (res.ok) {
+        const data = await res.json();
+        setOrders(Array.isArray(data) ? data : []);
+      } else {
+        console.error("Orders API error:", res.status, await res.text());
+      }
+    } catch (err) {
+      console.error("Orders fetch error:", err);
+    }
   }, []);
 
   useEffect(() => {

@@ -5,31 +5,37 @@ import { orderCreateSchema } from "@/lib/validations";
 import { canViewFinance, stripFinanceFields } from "@/lib/rbac";
 
 export async function GET() {
-  const auth = await requireAuth();
-  if (isAuthError(auth)) return auth;
+  try {
+    const auth = await requireAuth();
+    if (isAuthError(auth)) return auth;
 
-  const supabase = createServerSupabase();
-  const { data, error } = await supabase
-    .from("orders")
-    .select("*, order_tasks(id, department, status, assigned_to, assignee:profiles(full_name))")
-    .order("created_at", { ascending: false });
+    const supabase = createServerSupabase();
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*, order_tasks(id, department, status, assigned_to, assignee:profiles(full_name))")
+      .order("created_at", { ascending: false });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const orders = (data ?? []).map((o) => {
-    const base = canViewFinance(auth.role) ? o : stripFinanceFields(o);
-    const tasks = (o.order_tasks || []) as { department: string; status: string; assignee: { full_name: string } | null }[];
-    return {
-      ...base,
-      task_summary: tasks.map((t) => ({
-        department: t.department,
-        status: t.status,
-        assignee_name: t.assignee?.full_name || null,
-      })),
-    };
-  });
+    const orders = (data ?? []).map((o) => {
+      const base = canViewFinance(auth.role) ? o : stripFinanceFields(o);
+      const tasks = (o.order_tasks || []) as { department: string; status: string; assignee: { full_name: string } | null }[];
+      return {
+        ...base,
+        order_tasks: undefined,
+        task_summary: tasks.map((t) => ({
+          department: t.department,
+          status: t.status,
+          assignee_name: t.assignee?.full_name || null,
+        })),
+      };
+    });
 
-  return NextResponse.json(orders);
+    return NextResponse.json(orders);
+  } catch (err) {
+    console.error("GET /api/orders error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
 }
 
 export async function POST(request: NextRequest) {
