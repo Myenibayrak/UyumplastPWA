@@ -37,6 +37,21 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+DO $$ BEGIN
+  ALTER TYPE public.order_status ADD VALUE IF NOT EXISTS 'confirmed';
+  ALTER TYPE public.order_status ADD VALUE IF NOT EXISTS 'in_production';
+  ALTER TYPE public.order_status ADD VALUE IF NOT EXISTS 'ready';
+  ALTER TYPE public.order_status ADD VALUE IF NOT EXISTS 'closed';
+EXCEPTION WHEN undefined_object THEN
+  NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TYPE public.source_type ADD VALUE IF NOT EXISTS 'both';
+EXCEPTION WHEN undefined_object THEN
+  NULL;
+END $$;
+
 -- 2) FUNCTIONS (before tables that reference them)
 
 -- touch_updated_at
@@ -332,6 +347,7 @@ CREATE TABLE IF NOT EXISTS public.order_tasks (
   order_id uuid NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
   department public.app_role NOT NULL,
   assigned_to uuid REFERENCES public.profiles(id),
+  assigned_by uuid REFERENCES public.profiles(id),
   status public.task_status NOT NULL DEFAULT 'pending',
   priority public.priority_level NOT NULL DEFAULT 'normal',
   due_date timestamptz,
@@ -340,6 +356,9 @@ CREATE TABLE IF NOT EXISTS public.order_tasks (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE public.order_tasks
+  ADD COLUMN IF NOT EXISTS assigned_by uuid REFERENCES public.profiles(id);
 
 -- notifications
 CREATE TABLE IF NOT EXISTS public.notifications (
@@ -545,20 +564,35 @@ CREATE OR REPLACE FUNCTION public.update_order_production_ready()
 RETURNS TRIGGER AS $$
 DECLARE
   v_order_id uuid;
-  v_total_kg numeric;
 BEGIN
-  IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND OLD.status IS DISTINCT FROM NEW.status AND NEW.status = 'produced') THEN
+  IF TG_OP = 'DELETE' THEN
+    v_order_id := OLD.order_id;
+  ELSE
     v_order_id := NEW.order_id;
-
-    SELECT COALESCE(SUM(kg), 0) INTO v_total_kg
-    FROM public.production_bobins
-    WHERE order_id = v_order_id AND status = 'produced';
-
-    UPDATE public.orders
-    SET production_ready_kg = v_total_kg
-    WHERE id = v_order_id;
   END IF;
 
+  UPDATE public.orders
+  SET production_ready_kg = (
+    SELECT COALESCE(SUM(kg), 0)
+    FROM public.production_bobins
+    WHERE order_id = v_order_id AND status = 'produced'
+  )
+  WHERE id = v_order_id;
+
+  -- If order_id changed on update, recalculate previous order too.
+  IF TG_OP = 'UPDATE' AND OLD.order_id IS DISTINCT FROM NEW.order_id THEN
+    UPDATE public.orders
+    SET production_ready_kg = (
+      SELECT COALESCE(SUM(kg), 0)
+      FROM public.production_bobins
+      WHERE order_id = OLD.order_id AND status = 'produced'
+    )
+    WHERE id = OLD.order_id;
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -568,20 +602,34 @@ CREATE OR REPLACE FUNCTION public.update_order_stock_ready()
 RETURNS TRIGGER AS $$
 DECLARE
   v_order_id uuid;
-  v_total_kg numeric;
 BEGIN
-  IF TG_OP = 'INSERT' THEN
+  IF TG_OP = 'DELETE' THEN
+    v_order_id := OLD.order_id;
+  ELSE
     v_order_id := NEW.order_id;
-
-    SELECT COALESCE(SUM(kg), 0) INTO v_total_kg
-    FROM public.order_stock_entries
-    WHERE order_id = v_order_id;
-
-    UPDATE public.orders
-    SET stock_ready_kg = v_total_kg
-    WHERE id = v_order_id;
   END IF;
 
+  UPDATE public.orders
+  SET stock_ready_kg = (
+    SELECT COALESCE(SUM(kg), 0)
+    FROM public.order_stock_entries
+    WHERE order_id = v_order_id
+  )
+  WHERE id = v_order_id;
+
+  IF TG_OP = 'UPDATE' AND OLD.order_id IS DISTINCT FROM NEW.order_id THEN
+    UPDATE public.orders
+    SET stock_ready_kg = (
+      SELECT COALESCE(SUM(kg), 0)
+      FROM public.order_stock_entries
+      WHERE order_id = OLD.order_id
+    )
+    WHERE id = OLD.order_id;
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -609,12 +657,12 @@ CREATE TRIGGER trg_order_stock_entries_updated BEFORE UPDATE ON public.order_sto
 
 -- Production bobin ready trigger
 DROP TRIGGER IF EXISTS trg_production_bobin_ready ON public.production_bobins;
-CREATE TRIGGER trg_production_bobin_ready AFTER INSERT OR UPDATE ON public.production_bobins
+CREATE TRIGGER trg_production_bobin_ready AFTER INSERT OR UPDATE OR DELETE ON public.production_bobins
   FOR EACH ROW EXECUTE FUNCTION public.update_order_production_ready();
 
 -- Order stock entry ready trigger
 DROP TRIGGER IF EXISTS trg_order_stock_entry_ready ON public.order_stock_entries;
-CREATE TRIGGER trg_order_stock_entry_ready AFTER INSERT ON public.order_stock_entries
+CREATE TRIGGER trg_order_stock_entry_ready AFTER INSERT OR UPDATE OR DELETE ON public.order_stock_entries
   FOR EACH ROW EXECUTE FUNCTION public.update_order_stock_ready();
 
 -- 6) RLS

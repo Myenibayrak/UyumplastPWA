@@ -97,21 +97,11 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Update order status to in_production and add to stock_ready_kg
-  const { data: orderData } = await supabase
-    .from("orders")
-    .select("stock_ready_kg")
-    .eq("id", body.order_id)
-    .single();
-
-  const currentStockReady = orderData?.stock_ready_kg || 0;
-  const targetKg = Number(body.target_kg || body.source_kg || 0);
-
+  // Update order status to in_production.
   const { error: orderUpdateError } = await supabase
     .from("orders")
     .update({
       status: "in_production",
-      stock_ready_kg: currentStockReady + targetKg
     })
     .eq("id", body.order_id);
   if (orderUpdateError) return NextResponse.json({ error: orderUpdateError.message }, { status: 500 });

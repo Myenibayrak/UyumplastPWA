@@ -165,21 +165,6 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     }
   }
 
-  // Reduce from order's stock_ready_kg
-  if (plan && plan.order_id) {
-    const targetKg = Number(plan.target_kg || plan.source_kg || 0);
-    const { data: orderData } = await supabase
-      .from("orders")
-      .select("stock_ready_kg")
-      .eq("id", plan.order_id)
-      .single();
-
-    if (orderData) {
-      const newReady = Math.max(0, (orderData.stock_ready_kg || 0) - targetKg);
-      await supabase.from("orders").update({ stock_ready_kg: newReady }).eq("id", plan.order_id);
-    }
-  }
-
   const { error } = await supabase.from("cutting_plans").delete().eq("id", params.id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ success: true });

@@ -164,7 +164,6 @@ export default function ProductionPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {plans.map((plan) => {
           const order = plan.order as Order;
-          const stock = stockItems.find((s) => s.id === plan.source_stock_id);
           const assignee = plan.assignee as Profile | null;
 
           return (
@@ -184,7 +183,7 @@ export default function ProductionPage() {
                   <div>
                     <p className="text-slate-500">Kaynak:</p>
                     <p className="font-medium">
-                      {stock?.product} {stock?.micron}µ {stock?.width}mm — {stock?.kg} kg
+                      {plan.source_product} {plan.source_micron}µ {plan.source_width}mm — {plan.source_kg} kg
                     </p>
                   </div>
                   <div>
@@ -310,10 +309,10 @@ export default function ProductionPage() {
             {/* Operator */}
             <div>
               <Label>Operatör</Label>
-              <Select value={planForm.assigned_to || ""} onValueChange={(v) => setPlanForm((p) => ({ ...p, assigned_to: v }))}>
+              <Select value={planForm.assigned_to || "__all__"} onValueChange={(v) => setPlanForm((p) => ({ ...p, assigned_to: v === "__all__" ? "" : v }))}>
                 <SelectTrigger><SelectValue placeholder="Seçin (opsiyonel)" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Herkese (departman)</SelectItem>
+                  <SelectItem value="__all__">Herkese (departman)</SelectItem>
                   {operators.map((o) => (
                     <SelectItem key={o.id} value={o.id}>{o.full_name}</SelectItem>
                   ))}

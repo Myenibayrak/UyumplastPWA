@@ -3,11 +3,16 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, isAuthError } from "@/lib/auth/guards";
 
 export async function GET(
-  request: NextRequest,
-  { params }: { params: { orderId: string } }
+  request: NextRequest
 ) {
   const auth = await requireAuth();
   if (isAuthError(auth)) return auth;
+
+  const { searchParams } = new URL(request.url);
+  const orderId = searchParams.get("order_id");
+  if (!orderId) {
+    return NextResponse.json({ error: "order_id gerekli" }, { status: 400 });
+  }
 
   const supabase = createAdminClient();
   const { data, error } = await supabase
@@ -16,7 +21,7 @@ export async function GET(
       *,
       entered_by_profile:profiles!order_stock_entries_entered_by_fkey(full_name)
     `)
-    .eq("order_id", params.orderId)
+    .eq("order_id", orderId)
     .order("entered_at", { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

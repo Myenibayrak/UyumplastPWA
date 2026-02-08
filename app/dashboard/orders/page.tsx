@@ -11,9 +11,20 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import type { Order, AppRole, Profile } from "@/lib/types";
 import { canViewFinance, canManageOrders, isWorkerRole } from "@/lib/rbac";
-import { ORDER_STATUS_LABELS, SOURCE_TYPE_ICONS, PRIORITY_LABELS } from "@/lib/types";
+import { ORDER_STATUS_LABELS, SOURCE_TYPE_ICONS } from "@/lib/types";
 import { toast } from "@/hooks/use-toast";
-import { Plus, Filter, Search } from "lucide-react";
+import { Plus, Search } from "lucide-react";
+
+function normalizeTurkishName(value: string) {
+  return value
+    .toLocaleLowerCase("tr-TR")
+    .replace(/ı/g, "i")
+    .replace(/ğ/g, "g")
+    .replace(/ü/g, "u")
+    .replace(/ş/g, "s")
+    .replace(/ö/g, "o")
+    .replace(/ç/g, "c");
+}
 
 export default function OrdersPage() {
   const [allOrders, setAllOrders] = useState<Order[]>([]);
@@ -54,7 +65,7 @@ export default function OrdersPage() {
         setUserName(profile.full_name || "");
       }
     });
-    supabase.from("profiles").select("*").eq("active", true).then(({ data }) => {
+    supabase.from("profiles").select("*").in("role", ["warehouse", "production", "shipping"]).then(({ data }) => {
       if (data) setWorkers(data as Profile[]);
     });
     loadOrders();
@@ -64,6 +75,18 @@ export default function OrdersPage() {
   const isManager = role ? canManageOrders(role) : false;
   const isWorker = role ? isWorkerRole(role) : false;
   const showFinance = role ? canViewFinance(role) : false;
+  const canViewHistory = useMemo(() => {
+    if (role === "admin" || role === "accounting") return true;
+    const normalized = normalizeTurkishName(userName || "");
+    const tokens = normalized.split(/\s+/).filter(Boolean);
+    return tokens.some((token) => ["mustafa", "muhammed", "admin", "imren"].includes(token));
+  }, [role, userName]);
+
+  useEffect(() => {
+    if (!canViewHistory && activeTab === "history") {
+      setActiveTab("active");
+    }
+  }, [activeTab, canViewHistory]);
 
   // Filter orders
   const filteredOrders = useMemo(() => {
@@ -136,17 +159,18 @@ export default function OrdersPage() {
     } finally { setTaskLoading(false); }
   }
 
-  async function handleStatusChange(order: Order, newStatus: string) {
+  async function closeOrder(order: Order) {
     try {
+      if (!confirm(`${order.order_no} siparişini kapatmak istediğinize emin misiniz?`)) return;
       const res = await fetch(`/api/orders/${order.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ status: "closed" }),
       });
       if (!res.ok) throw new Error("Hata");
       const updated = await res.json();
       handleOrderPatched(updated);
-      toast({ title: "Durum güncellendi" });
+      toast({ title: "Sipariş kapatıldı" });
     } catch {
       toast({ title: "Hata", variant: "destructive" });
     }
@@ -225,14 +249,16 @@ export default function OrdersPage() {
           >
             Aktif
           </button>
-          <button
-            onClick={() => setActiveTab("history")}
-            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-              activeTab === "history" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"
-            }`}
-          >
-            Geçmiş
-          </button>
+          {canViewHistory && (
+            <button
+              onClick={() => setActiveTab("history")}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                activeTab === "history" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"
+              }`}
+            >
+              Geçmiş
+            </button>
+          )}
         </div>
 
         {/* Status Filter */}
@@ -243,7 +269,8 @@ export default function OrdersPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Tümü</SelectItem>
-              <SelectItem value="pending">Hazırlanıyor</SelectItem>
+              <SelectItem value="in_production">Hazırlanıyor</SelectItem>
+              <SelectItem value="confirmed">Onaylı</SelectItem>
               <SelectItem value="ready">Hazır</SelectItem>
             </SelectContent>
           </Select>
@@ -294,7 +321,9 @@ export default function OrdersPage() {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">Hazırlık</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">Durum</th>
                   {showFinance && <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">Fiyat</th>}
-                  {isManager && activeTab === "active" && <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">İşlem</th>}
+                  {(isManager || canClose) && activeTab === "active" && (
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">İşlem</th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
@@ -360,17 +389,29 @@ export default function OrdersPage() {
                           )}
                         </td>
                       )}
-                      {isManager && activeTab === "active" && (
+                      {(isManager || canClose) && activeTab === "active" && (
                         <td className="px-4 py-3">
                           <div className="flex gap-1">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7 text-xs"
-                              onClick={() => setTaskDialogOrder(order)}
-                            >
-                              Görev
-                            </Button>
+                            {isManager && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs"
+                                onClick={() => setTaskDialogOrder(order)}
+                              >
+                                Görev
+                              </Button>
+                            )}
+                            {canClose && order.status !== "closed" && order.status !== "cancelled" && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs border-red-200 text-red-600 hover:bg-red-50"
+                                onClick={() => closeOrder(order)}
+                              >
+                                Evrak Kes
+                              </Button>
+                            )}
                           </div>
                         </td>
                       )}

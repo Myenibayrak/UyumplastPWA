@@ -12,7 +12,7 @@ import { ROLE_LABELS } from "@/lib/types";
 import {
   LogOut, Menu, X,
   Package, ClipboardList, Settings, LayoutDashboard,
-  Scissors, Truck, Wrench,
+  Wrench,
 } from "lucide-react";
 
 interface NavItem {
@@ -28,11 +28,9 @@ const MENU_BY_ROLE: Record<AppRole, NavItem[]> = {
     { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
     { href: "/dashboard/tasks", label: "Görevler", icon: <ClipboardList className="h-5 w-5" /> },
     { href: "/dashboard/production", label: "Üretim Planları", icon: <LayoutDashboard className="h-5 w-5" /> },
-    { href: "/dashboard/cutting", label: "Kesim Planları", icon: <Scissors className="h-5 w-5" /> },
     { href: "/dashboard/bobin-entry", label: "Bobin Girişi", icon: <Wrench className="h-5 w-5" /> },
     { href: "/dashboard/warehouse-entry", label: "Depo Girişi", icon: <LayoutDashboard className="h-5 w-5" /> },
     { href: "/dashboard/stock", label: "Stok", icon: <Package className="h-5 w-5" /> },
-    { href: "/dashboard/shipping", label: "Sevkiyat", icon: <Truck className="h-5 w-5" /> },
     { href: "/dashboard/settings", label: "Ayarlar", icon: <Settings className="h-5 w-5" /> },
   ],
   sales: [
@@ -43,7 +41,6 @@ const MENU_BY_ROLE: Record<AppRole, NavItem[]> = {
   production: [
     { href: "/dashboard/tasks", label: "Görevlerim", icon: <ClipboardList className="h-5 w-5" /> },
     { href: "/dashboard/production", label: "Üretim Planları", icon: <LayoutDashboard className="h-5 w-5" /> },
-    { href: "/dashboard/cutting", label: "Kesim Planları", icon: <Scissors className="h-5 w-5" /> },
     { href: "/dashboard/bobin-entry", label: "Bobin Girişi", icon: <Wrench className="h-5 w-5" /> },
   ],
   warehouse: [
@@ -55,11 +52,9 @@ const MENU_BY_ROLE: Record<AppRole, NavItem[]> = {
   shipping: [
     { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
     { href: "/dashboard/tasks", label: "Görevlerim", icon: <ClipboardList className="h-5 w-5" /> },
-    { href: "/dashboard/shipping", label: "Sevkiyat", icon: <Truck className="h-5 w-5" /> },
   ],
   accounting: [
     { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
-    { href: "/dashboard/accounting", label: "Muhasebe", icon: <LayoutDashboard className="h-5 w-5" /> },
   ],
 };
 

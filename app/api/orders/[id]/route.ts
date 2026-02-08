@@ -129,11 +129,20 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const supabase = createAdminClient();
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("order_tasks")
     .insert({ ...parsed.data, assigned_by: auth.userId })
     .select()
     .single();
+
+  // Fallback for environments where order_tasks.assigned_by column is not migrated yet.
+  if (error && /assigned_by/i.test(error.message || "")) {
+    ({ data, error } = await supabase
+      .from("order_tasks")
+      .insert(parsed.data)
+      .select()
+      .single());
+  }
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(data, { status: 201 });

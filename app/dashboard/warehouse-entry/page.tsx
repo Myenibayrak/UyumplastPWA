@@ -37,7 +37,7 @@ export default function WarehouseEntryPage() {
   }, []);
 
   const loadEntries = useCallback(async (orderId: string) => {
-    const res = await fetch(`/api/order-stock-entries/${orderId}`);
+    const res = await fetch(`/api/order-stock-entries?order_id=${encodeURIComponent(orderId)}`);
     if (res.ok) {
       const data = await res.json();
       setEntries(data as OrderStockEntry[]);
