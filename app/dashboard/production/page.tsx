@@ -30,6 +30,7 @@ export default function ProductionPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [stockItems, setStockItems] = useState<StockItem[]>([]);
   const [operators, setOperators] = useState<Profile[]>([]);
+  const [pendingOrders, setPendingOrders] = useState<Order[]>([]);
 
   // Plan creation dialog
   const [planOpen, setPlanOpen] = useState(false);
@@ -67,7 +68,19 @@ export default function ProductionPage() {
     if (res.ok) setPlans(await res.json());
   }, [statusFilter]);
 
+  const loadPendingOrders = useCallback(async () => {
+    const res = await fetch("/api/orders");
+    if (res.ok) {
+      const all: Order[] = await res.json();
+      const productionOrders = all.filter((o) => o.source_type === "production" && !["shipped", "delivered", "cancelled"].includes(o.status));
+      // Plans already loaded - filter out orders that already have a cutting plan
+      const planOrderIds = new Set(plans.map((p) => p.order_id));
+      setPendingOrders(productionOrders.filter((o) => !planOrderIds.has(o.id)));
+    }
+  }, [plans]);
+
   useEffect(() => { loadPlans(); }, [loadPlans]);
+  useEffect(() => { loadPendingOrders(); }, [loadPendingOrders]);
 
   const loadOrdersForPlan = async () => {
     const res = await fetch("/api/orders");
@@ -199,13 +212,48 @@ export default function ProductionPage() {
         )}
       </div>
 
-      {myPlans.length === 0 ? (
+      {/* Planlama Bekleyenler - only for managers/admin */}
+      {(isManager || isAdmin) && pendingOrders.length > 0 && (
+        <div className="rounded-lg border-2 border-orange-300 bg-orange-50 p-4 space-y-3">
+          <h2 className="text-sm font-bold text-orange-700 flex items-center gap-2">
+            <Factory className="h-4 w-4" />
+            Üretim Planlama Bekleyenler ({pendingOrders.length})
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+            {pendingOrders.map((o) => (
+              <div key={o.id} className="bg-white rounded-md border p-3 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-sm text-blue-700 font-bold">{o.order_no}</span>
+                  <Badge variant="outline" className="text-[10px] bg-orange-100 text-orange-700 border-orange-300">Planlama Bekliyor</Badge>
+                </div>
+                <p className="text-xs"><strong>{o.customer}</strong></p>
+                <p className="text-xs text-muted-foreground">
+                  {o.product_type} {o.micron ? `${o.micron}µ` : ""} {o.width ? `${o.width}mm` : ""} — {o.quantity} {o.unit}
+                  {o.trim_width ? ` (Kesim: ${o.trim_width}mm)` : ""}
+                </p>
+                {o.ship_date && <p className="text-[10px] text-red-600">Sevk: {new Date(o.ship_date).toLocaleDateString("tr-TR")}</p>}
+                <Button size="sm" className="h-7 w-full mt-1 text-xs bg-orange-600 hover:bg-orange-700"
+                  onClick={() => {
+                    setPlanForm((prev) => ({ ...prev, order_id: o.id }));
+                    setPlanOpen(true);
+                    loadOrdersForPlan();
+                    loadStockForPlan();
+                  }}>
+                  <Scissors className="h-3 w-3 mr-1" /> Kesim Planla
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {myPlans.length === 0 && pendingOrders.length === 0 ? (
         <div className="flex items-center justify-center py-20">
           <p className="text-lg text-muted-foreground">
             {isManager || isAdmin ? "Henüz kesim planı yok. Siparişler için kesim planı oluşturun." : "Size atanmış kesim planı yok."}
           </p>
         </div>
-      ) : (
+      ) : myPlans.length === 0 ? null : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {myPlans.map((plan) => {
             const order = plan.order as Record<string, unknown> | undefined;

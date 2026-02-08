@@ -202,6 +202,17 @@ export function OrderTable({ orders, showFinance, canEdit, onReload, onNewOrder,
         size: 70,
       },
       {
+        accessorKey: "source_type",
+        header: "Kaynak",
+        cell: ({ row }) => {
+          const st = row.original.source_type;
+          return st === "production"
+            ? <Badge className="text-[10px] bg-orange-100 text-orange-700 border-orange-300">Üretim</Badge>
+            : <Badge className="text-[10px] bg-blue-100 text-blue-700 border-blue-300">Stok</Badge>;
+        },
+        size: 70,
+      },
+      {
         accessorKey: "ready_quantity",
         header: "Hazır",
         cell: ({ row }) => <span className="font-medium text-green-700">{row.original.ready_quantity ?? 0}</span>,

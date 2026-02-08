@@ -15,6 +15,7 @@ export const orderCreateSchema = z.object({
   ship_date: z.string().nullable().optional(),
   priority: z.enum(["low", "normal", "high", "urgent"]).default("normal"),
   notes: z.string().nullable().optional(),
+  source_type: z.enum(["stock", "production"]).default("stock"),
 });
 
 export const orderUpdateSchema = orderCreateSchema.partial().extend({

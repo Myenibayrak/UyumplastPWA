@@ -13,16 +13,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { Definition, Order } from "@/lib/types";
 import { toast } from "@/hooks/use-toast";
+import { Package, Factory } from "lucide-react";
 
 interface OrderFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
   editOrder?: Order | null;
+  showFinance?: boolean;
 }
 
-export function OrderForm({ open, onOpenChange, onSuccess, editOrder }: OrderFormProps) {
+export function OrderForm({ open, onOpenChange, onSuccess, editOrder, showFinance = true }: OrderFormProps) {
   const [definitions, setDefinitions] = useState<Definition[]>([]);
+  const [filmTypes, setFilmTypes] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<OrderCreateInput>({
@@ -31,13 +34,20 @@ export function OrderForm({ open, onOpenChange, onSuccess, editOrder }: OrderFor
       unit: "kg",
       currency: "TRY",
       priority: "normal",
+      source_type: "stock",
     },
   });
+
+  const sourceType = watch("source_type");
 
   useEffect(() => {
     const supabase = createClient();
     supabase.from("definitions").select("*").eq("active", true).order("sort_order").then(({ data }) => {
       if (data) setDefinitions(data as Definition[]);
+    });
+    // Get unique product names from stock for the product dropdown
+    supabase.from("definitions").select("label").eq("category", "film_type").eq("active", true).order("label").then(({ data }) => {
+      if (data) setFilmTypes(data.map((d: { label: string }) => d.label));
     });
   }, []);
 
@@ -58,9 +68,10 @@ export function OrderForm({ open, onOpenChange, onSuccess, editOrder }: OrderFor
         ship_date: editOrder.ship_date ? editOrder.ship_date.split("T")[0] : null,
         priority: editOrder.priority,
         notes: editOrder.notes,
+        source_type: editOrder.source_type || "stock",
       });
     } else {
-      reset({ unit: "kg", currency: "TRY", priority: "normal" });
+      reset({ unit: "kg", currency: "TRY", priority: "normal", source_type: "stock" });
     }
   }, [editOrder, reset]);
 
@@ -97,6 +108,24 @@ export function OrderForm({ open, onOpenChange, onSuccess, editOrder }: OrderFor
           <DialogTitle>{editOrder ? "Siparişi Düzenle" : "Yeni Sipariş"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          {/* Kaynak Tipi */}
+          <div className="space-y-2">
+            <Label className="font-semibold">Kaynak *</Label>
+            <div className="flex gap-2">
+              <Button type="button" variant={sourceType === "stock" ? "default" : "outline"} className="flex-1 h-10"
+                onClick={() => setValue("source_type", "stock")}>
+                <Package className="h-4 w-4 mr-2" /> Stoktan
+              </Button>
+              <Button type="button" variant={sourceType === "production" ? "default" : "outline"} className="flex-1 h-10"
+                onClick={() => setValue("source_type", "production")}>
+                <Factory className="h-4 w-4 mr-2" /> Üretim
+              </Button>
+            </div>
+            {sourceType === "production" && (
+              <p className="text-xs text-orange-600 bg-orange-50 p-2 rounded">Üretim seçildi — sipariş oluşturulunca fabrika müdürüne planlama bildirimi gidecek.</p>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Müşteri *</Label>
@@ -112,10 +141,13 @@ export function OrderForm({ open, onOpenChange, onSuccess, editOrder }: OrderFor
             </div>
 
             <div className="space-y-2">
-              <Label>Ürün Tipi *</Label>
+              <Label>Ürün Cinsi *</Label>
               <Select onValueChange={(v) => setValue("product_type", v)} value={watch("product_type") || ""}>
-                <SelectTrigger><SelectValue placeholder="Ürün tipi seçin" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Ürün seçin" /></SelectTrigger>
                 <SelectContent>
+                  {filmTypes.map((ft) => (
+                    <SelectItem key={ft} value={ft}>{ft}</SelectItem>
+                  ))}
                   {getDefsByCategory("product_type").map((d) => (
                     <SelectItem key={d.id} value={d.label}>{d.label}</SelectItem>
                   ))}
@@ -144,6 +176,9 @@ export function OrderForm({ open, onOpenChange, onSuccess, editOrder }: OrderFor
               <Select onValueChange={(v) => setValue("unit", v)} value={watch("unit") || "kg"}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="kg">kg</SelectItem>
+                  <SelectItem value="adet">Adet</SelectItem>
+                  <SelectItem value="metre">Metre</SelectItem>
                   {getDefsByCategory("unit").map((d) => (
                     <SelectItem key={d.id} value={d.value}>{d.label}</SelectItem>
                   ))}
@@ -152,43 +187,50 @@ export function OrderForm({ open, onOpenChange, onSuccess, editOrder }: OrderFor
             </div>
 
             <div className="space-y-2">
-              <Label>Kesim Eni</Label>
-              <Input type="number" step="0.01" {...register("trim_width", { valueAsNumber: true })} />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Fiyat</Label>
-              <Input type="number" step="0.01" {...register("price", { valueAsNumber: true })} />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Ödeme Vadesi</Label>
-              <Select onValueChange={(v) => setValue("payment_term", v)} value={watch("payment_term") || ""}>
-                <SelectTrigger><SelectValue placeholder="Seçin" /></SelectTrigger>
-                <SelectContent>
-                  {getDefsByCategory("payment_term").map((d) => (
-                    <SelectItem key={d.id} value={d.label}>{d.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Para Birimi</Label>
-              <Select onValueChange={(v) => setValue("currency", v)} value={watch("currency") || "TRY"}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {getDefsByCategory("currency").map((d) => (
-                    <SelectItem key={d.id} value={d.value}>{d.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Kesim Eni <span className="text-xs text-muted-foreground">(opsiyonel)</span></Label>
+              <Input type="number" step="0.01" {...register("trim_width", { valueAsNumber: true })} placeholder="Belirtilmemişse boş bırakın" />
             </div>
 
             <div className="space-y-2">
               <Label>Sevk Tarihi</Label>
               <Input type="date" {...register("ship_date")} />
             </div>
+
+            {showFinance && (
+              <>
+                <div className="space-y-2">
+                  <Label>Fiyat</Label>
+                  <Input type="number" step="0.01" {...register("price", { valueAsNumber: true })} />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Ödeme Vadesi</Label>
+                  <Select onValueChange={(v) => setValue("payment_term", v)} value={watch("payment_term") || ""}>
+                    <SelectTrigger><SelectValue placeholder="Seçin" /></SelectTrigger>
+                    <SelectContent>
+                      {getDefsByCategory("payment_term").map((d) => (
+                        <SelectItem key={d.id} value={d.label}>{d.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Para Birimi</Label>
+                  <Select onValueChange={(v) => setValue("currency", v)} value={watch("currency") || "TRY"}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="TRY">TRY</SelectItem>
+                      <SelectItem value="USD">USD</SelectItem>
+                      <SelectItem value="EUR">EUR</SelectItem>
+                      {getDefsByCategory("currency").map((d) => (
+                        <SelectItem key={d.id} value={d.value}>{d.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
 
             <div className="space-y-2">
               <Label>Öncelik</Label>

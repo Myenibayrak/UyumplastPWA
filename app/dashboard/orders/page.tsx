@@ -86,7 +86,7 @@ export default function OrdersPage() {
         onAssignTask={(o) => setTaskDialogOrder(o)}
       />
 
-      <OrderForm open={formOpen} onOpenChange={setFormOpen} onSuccess={loadOrders} editOrder={editOrder} />
+      <OrderForm open={formOpen} onOpenChange={setFormOpen} onSuccess={loadOrders} editOrder={editOrder} showFinance={role ? canViewFinance(role) : false} />
 
       <Dialog open={!!taskDialogOrder} onOpenChange={(v) => { if (!v) setTaskDialogOrder(null); }}>
         <DialogContent className="max-w-md">

@@ -88,6 +88,7 @@ export interface Order {
   ship_date: string | null;
   priority: Priority;
   notes: string | null;
+  source_type: "stock" | "production";
   created_by: string;
   assigned_by: string | null;
   created_at: string;

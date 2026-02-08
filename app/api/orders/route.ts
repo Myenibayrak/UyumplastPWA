@@ -59,5 +59,27 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // If source_type is production, notify admin + production users for planning
+  if (parsed.data.source_type === "production" && data) {
+    const { data: planners } = await supabase
+      .from("profiles")
+      .select("id")
+      .in("role", ["admin", "production"]);
+
+    if (planners && planners.length > 0) {
+      const notifications = planners
+        .filter((p: { id: string }) => p.id !== auth.userId)
+        .map((p: { id: string }) => ({
+          user_id: p.id,
+          title: "Üretim Planlama Bekliyor",
+          body: `${data.order_no} — ${parsed.data.customer} (${parsed.data.product_type}) siparişi üretim gerektiriyor. Planlama yapılmalı.`,
+          type: "production_planning",
+          ref_id: data.id,
+        }));
+      if (notifications.length > 0) await supabase.from("notifications").insert(notifications);
+    }
+  }
+
   return NextResponse.json(data, { status: 201 });
 }
