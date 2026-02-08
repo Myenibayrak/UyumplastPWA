@@ -68,6 +68,21 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       .single());
   }
 
+  // Fallback for environments where order_status enum does not yet include "closed".
+  if (
+    error
+    && parsed.data.status === "closed"
+    && /invalid input value for enum order_status/i.test(error.message || "")
+  ) {
+    const retryData = { ...updateData, status: "cancelled" as const };
+    ({ data, error } = await supabase
+      .from("orders")
+      .update(retryData)
+      .eq("id", params.id)
+      .select()
+      .single());
+  }
+
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const order = canViewFinance(auth.role) ? data : stripFinanceFields(data as Record<string, unknown>);
