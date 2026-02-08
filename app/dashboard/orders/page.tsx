@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { OrderTable } from "@/components/orders/order-table";
 import { OrderForm } from "@/components/orders/order-form";
@@ -9,13 +9,19 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 import type { Order, AppRole, Profile } from "@/lib/types";
 import { canViewFinance, canManageOrders } from "@/lib/rbac";
 import { toast } from "@/hooks/use-toast";
 
+const HISTORY_ALLOWED_NAMES = ["Mustafa", "Muhammed", "İmren"];
+
 export default function OrdersPage() {
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [role, setRole] = useState<AppRole | null>(null);
+  const [userName, setUserName] = useState<string>("");
+  const [activeTab, setActiveTab] = useState<"active" | "history">("active");
   const [formOpen, setFormOpen] = useState(false);
   const [editOrder, setEditOrder] = useState<Order | null>(null);
   const [taskDialogOrder, setTaskDialogOrder] = useState<Order | null>(null);
@@ -31,7 +37,7 @@ export default function OrdersPage() {
       const res = await fetch("/api/orders");
       if (res.ok) {
         const data = await res.json();
-        setOrders(Array.isArray(data) ? data : []);
+        setAllOrders(Array.isArray(data) ? data : []);
       } else {
         console.error("Orders API error:", res.status, await res.text());
       }
@@ -44,14 +50,25 @@ export default function OrdersPage() {
     const supabase = createClient();
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return;
-      const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-      if (profile) setRole(profile.role as AppRole);
+      const { data: profile } = await supabase.from("profiles").select("role, full_name").eq("id", user.id).single();
+      if (profile) {
+        setRole(profile.role as AppRole);
+        setUserName(profile.full_name || "");
+      }
     });
     supabase.from("profiles").select("*").eq("active", true).then(({ data }) => {
       if (data) setWorkers(data as Profile[]);
     });
     loadOrders();
   }, [loadOrders]);
+
+  const canSeeHistory = role === "admin" || HISTORY_ALLOWED_NAMES.includes(userName);
+  const canClose = role === "accounting" || role === "admin";
+
+  const activeOrders = useMemo(() => allOrders.filter((o) => o.status !== "closed" && o.status !== "cancelled"), [allOrders]);
+  const historyOrders = useMemo(() => allOrders.filter((o) => o.status === "closed" || o.status === "cancelled"), [allOrders]);
+
+  const orders = activeTab === "active" ? activeOrders : historyOrders;
 
   function handleNew() { setEditOrder(null); setFormOpen(true); }
 
@@ -85,11 +102,29 @@ export default function OrdersPage() {
   const isManager = role ? canManageOrders(role) : false;
 
   return (
-    <div>
+    <div className="space-y-3">
+      <div className="flex items-center gap-3 flex-wrap">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "active" | "history")}>
+          <TabsList>
+            <TabsTrigger value="active">
+              Aktif Siparişler
+              <Badge variant="outline" className="ml-1 text-[10px]">{activeOrders.length}</Badge>
+            </TabsTrigger>
+            {canSeeHistory && (
+              <TabsTrigger value="history">
+                Geçmiş
+                <Badge variant="outline" className="ml-1 text-[10px]">{historyOrders.length}</Badge>
+              </TabsTrigger>
+            )}
+          </TabsList>
+        </Tabs>
+      </div>
+
       <OrderTable
         orders={orders}
         showFinance={role ? canViewFinance(role) : false}
-        canEdit={isManager}
+        canEdit={isManager && activeTab === "active"}
+        canClose={canClose && activeTab === "active"}
         onReload={loadOrders}
         onNewOrder={handleNew}
         onAssignTask={(o) => setTaskDialogOrder(o)}

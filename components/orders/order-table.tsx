@@ -17,6 +17,7 @@ interface OrderTableProps {
   orders: Order[];
   showFinance: boolean;
   canEdit: boolean;
+  canClose?: boolean;
   onReload: () => void;
   onNewOrder: () => void;
   onAssignTask: (order: Order) => void;
@@ -115,6 +116,7 @@ const statusBg: Record<string, string> = {
   shipped: "bg-purple-100 text-purple-700",
   delivered: "bg-emerald-100 text-emerald-700",
   cancelled: "bg-red-100 text-red-700",
+  closed: "bg-slate-200 text-slate-600",
 };
 
 const priorityBg: Record<string, string> = {
@@ -127,7 +129,7 @@ const priorityBg: Record<string, string> = {
 const STATUS_OPTIONS = Object.entries(ORDER_STATUS_LABELS).map(([v, l]) => ({ value: v, label: l }));
 const PRIORITY_OPTIONS = Object.entries(PRIORITY_LABELS).map(([v, l]) => ({ value: v, label: l }));
 
-export function OrderTable({ orders, showFinance, canEdit, onReload, onNewOrder, onAssignTask }: OrderTableProps) {
+export function OrderTable({ orders, showFinance, canEdit, canClose, onReload, onNewOrder, onAssignTask }: OrderTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState("");
 
@@ -206,17 +208,44 @@ export function OrderTable({ orders, showFinance, canEdit, onReload, onNewOrder,
         header: "Kaynak",
         cell: ({ row }) => {
           const st = row.original.source_type;
-          return st === "production"
-            ? <Badge className="text-[10px] bg-orange-100 text-orange-700 border-orange-300">Üretim</Badge>
-            : <Badge className="text-[10px] bg-blue-100 text-blue-700 border-blue-300">Stok</Badge>;
+          if (st === "both") return <Badge className="text-[10px] bg-purple-100 text-purple-700 border-purple-300">Stok+Üretim</Badge>;
+          if (st === "production") return <Badge className="text-[10px] bg-orange-100 text-orange-700 border-orange-300">Üretim</Badge>;
+          return <Badge className="text-[10px] bg-blue-100 text-blue-700 border-blue-300">Stok</Badge>;
         },
-        size: 70,
+        size: 80,
       },
       {
-        accessorKey: "ready_quantity",
-        header: "Hazır",
-        cell: ({ row }) => <span className="font-medium text-green-700">{row.original.ready_quantity ?? 0}</span>,
-        size: 60,
+        id: "ready_status",
+        header: "Hazır Durumu",
+        cell: ({ row }) => {
+          const o = row.original;
+          const qty = o.quantity || 0;
+          const stockKg = o.stock_ready_kg || 0;
+          const prodKg = o.production_ready_kg || 0;
+          const totalReady = stockKg + prodKg;
+          const pct = qty > 0 ? (totalReady / qty) * 100 : 0;
+          const isReady = qty > 0 && totalReady >= qty * 0.95;
+          return (
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-1">
+                <span className={`font-bold text-xs ${isReady ? "text-green-700" : "text-orange-600"}`}>
+                  {totalReady.toLocaleString("tr-TR")} / {qty.toLocaleString("tr-TR")} {o.unit}
+                </span>
+                {isReady && <span className="text-[9px] bg-green-100 text-green-700 px-1 rounded font-bold">HAZIR</span>}
+              </div>
+              <div className="flex gap-2 text-[9px] text-muted-foreground">
+                {stockKg > 0 && <span className="text-blue-600">Depo: {stockKg}</span>}
+                {prodKg > 0 && <span className="text-orange-600">İmalat: {prodKg}</span>}
+              </div>
+              {qty > 0 && (
+                <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full ${isReady ? "bg-green-500" : "bg-orange-400"}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+                </div>
+              )}
+            </div>
+          );
+        },
+        size: 140,
       },
       {
         accessorKey: "status",
@@ -300,21 +329,41 @@ export function OrderTable({ orders, showFinance, canEdit, onReload, onNewOrder,
       size: 200,
     });
 
-    if (canEdit) {
+    if (canEdit || canClose) {
       cols.push({
         id: "actions",
         header: "",
         cell: ({ row }) => (
-          <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2" onClick={(e) => { e.stopPropagation(); onAssignTask(row.original); }}>
-            + Görev
-          </Button>
+          <div className="flex gap-1">
+            {canEdit && (
+              <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2" onClick={(e) => { e.stopPropagation(); onAssignTask(row.original); }}>
+                + Görev
+              </Button>
+            )}
+            {canClose && row.original.status !== "closed" && row.original.status !== "cancelled" && (
+              <Button variant="outline" size="sm" className="h-6 text-[10px] px-2 text-red-600 border-red-200 hover:bg-red-50"
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  if (!confirm(`${row.original.order_no} siparişini kapatmak istediğinize emin misiniz?`)) return;
+                  const res = await fetch(`/api/orders/${row.original.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ status: "closed" }),
+                  });
+                  if (res.ok) { toast({ title: "Sipariş kapatıldı" }); onReload(); }
+                  else toast({ title: "Hata", variant: "destructive" });
+                }}>
+                Evrak Kes
+              </Button>
+            )}
+          </div>
         ),
-        size: 70,
+        size: 120,
       });
     }
 
     return cols;
-  }, [showFinance, canEdit, onReload, onAssignTask]);
+  }, [showFinance, canEdit, canClose, onReload, onAssignTask]);
 
   const table = useReactTable({
     data: orders,

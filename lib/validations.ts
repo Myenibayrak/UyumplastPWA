@@ -15,11 +15,11 @@ export const orderCreateSchema = z.object({
   ship_date: z.string().nullable().optional(),
   priority: z.enum(["low", "normal", "high", "urgent"]).default("normal"),
   notes: z.string().nullable().optional(),
-  source_type: z.enum(["stock", "production"]).default("stock"),
+  source_type: z.enum(["stock", "production", "both"]).default("stock"),
 });
 
 export const orderUpdateSchema = orderCreateSchema.partial().extend({
-  status: z.enum(["draft", "confirmed", "in_production", "ready", "shipped", "delivered", "cancelled"]).optional(),
+  status: z.enum(["draft", "confirmed", "in_production", "ready", "shipped", "delivered", "cancelled", "closed"]).optional(),
   ready_quantity: z.number().nullable().optional(),
 });
 

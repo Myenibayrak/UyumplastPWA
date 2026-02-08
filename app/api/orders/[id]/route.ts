@@ -25,7 +25,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   const auth = await requireAuth();
   if (isAuthError(auth)) return auth;
 
-  const roleCheck = requireRole(auth, ["admin", "sales"]);
+  const roleCheck = requireRole(auth, ["admin", "sales", "accounting"]);
   if (roleCheck) return roleCheck;
 
   let body: unknown;
@@ -34,10 +34,17 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   const parsed = orderUpdateSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
+  const updateData: Record<string, unknown> = { ...parsed.data };
+
+  if (parsed.data.status === "closed") {
+    updateData.closed_by = auth.userId;
+    updateData.closed_at = new Date().toISOString();
+  }
+
   const supabase = createServerSupabase();
   const { data, error } = await supabase
     .from("orders")
-    .update(parsed.data)
+    .update(updateData)
     .eq("id", params.id)
     .select()
     .single();

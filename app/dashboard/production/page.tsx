@@ -73,7 +73,7 @@ export default function ProductionPage() {
     const res = await fetch("/api/orders");
     if (res.ok) {
       const all: Order[] = await res.json();
-      const prodOrders = all.filter((o) => o.source_type === "production" && !["shipped", "delivered", "cancelled"].includes(o.status));
+      const prodOrders = all.filter((o) => (o.source_type === "production" || o.source_type === "both") && !["shipped", "delivered", "cancelled", "closed"].includes(o.status));
       const planOrderIds = new Set(plans.map((p) => p.order_id));
       setPendingOrders(prodOrders.filter((o) => !planOrderIds.has(o.id)));
     }

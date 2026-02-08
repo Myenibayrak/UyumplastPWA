@@ -112,17 +112,21 @@ export function OrderForm({ open, onOpenChange, onSuccess, editOrder, showFinanc
           <div className="space-y-2">
             <Label className="font-semibold">Kaynak *</Label>
             <div className="flex gap-2">
-              <Button type="button" variant={sourceType === "stock" ? "default" : "outline"} className="flex-1 h-10"
+              <Button type="button" variant={sourceType === "stock" ? "default" : "outline"} className="flex-1 h-9 text-sm"
                 onClick={() => setValue("source_type", "stock")}>
-                <Package className="h-4 w-4 mr-2" /> Stoktan
+                <Package className="h-4 w-4 mr-1" /> Stok
               </Button>
-              <Button type="button" variant={sourceType === "production" ? "default" : "outline"} className="flex-1 h-10"
+              <Button type="button" variant={sourceType === "production" ? "default" : "outline"} className="flex-1 h-9 text-sm"
                 onClick={() => setValue("source_type", "production")}>
-                <Factory className="h-4 w-4 mr-2" /> Üretim
+                <Factory className="h-4 w-4 mr-1" /> Üretim
+              </Button>
+              <Button type="button" variant={sourceType === "both" ? "default" : "outline"} className="flex-1 h-9 text-sm"
+                onClick={() => setValue("source_type", "both")}>
+                <Package className="h-3 w-3 mr-1" /><Factory className="h-3 w-3 mr-1" /> Stok+Üretim
               </Button>
             </div>
-            {sourceType === "production" && (
-              <p className="text-xs text-orange-600 bg-orange-50 p-2 rounded">Üretim seçildi — sipariş oluşturulunca fabrika müdürüne planlama bildirimi gidecek.</p>
+            {(sourceType === "production" || sourceType === "both") && (
+              <p className="text-xs text-orange-600 bg-orange-50 p-2 rounded">Üretim içerir — sipariş oluşturulunca fabrika müdürüne planlama bildirimi gidecek.</p>
             )}
           </div>
 

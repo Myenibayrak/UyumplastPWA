@@ -22,7 +22,8 @@ export type OrderStatus =
   | "ready"
   | "shipped"
   | "delivered"
-  | "cancelled";
+  | "cancelled"
+  | "closed";
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   draft: "Taslak",
@@ -32,6 +33,7 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   shipped: "Sevk Edildi",
   delivered: "Teslim Edildi",
   cancelled: "İptal",
+  closed: "Kapatıldı",
 };
 
 export type TaskStatus = "pending" | "in_progress" | "preparing" | "ready" | "done" | "cancelled";
@@ -88,7 +90,11 @@ export interface Order {
   ship_date: string | null;
   priority: Priority;
   notes: string | null;
-  source_type: "stock" | "production";
+  source_type: "stock" | "production" | "both";
+  stock_ready_kg: number;
+  production_ready_kg: number;
+  closed_by: string | null;
+  closed_at: string | null;
   created_by: string;
   assigned_by: string | null;
   created_at: string;

@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   // If source_type is production, notify admin + production users for planning
-  if (parsed.data.source_type === "production" && data) {
+  if ((parsed.data.source_type === "production" || parsed.data.source_type === "both") && data) {
     const { data: planners } = await supabase
       .from("profiles")
       .select("id")
