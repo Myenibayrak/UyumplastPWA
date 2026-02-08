@@ -2,9 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "MyPlast OMS",
-    short_name: "MyPlast",
-    description: "MyPlast Sipariş Yönetim Sistemi",
+    name: "Uyumplast OMS",
+    short_name: "Uyumplast",
+    description: "Uyumplast Sipariş Yönetim Sistemi",
     start_url: "/dashboard",
     display: "standalone",
     background_color: "#ffffff",

@@ -3,7 +3,7 @@ import { Client } from "pg";
 
 const SETUP_SQL = `
 -- ============================================================
--- MyPlast OMS — Full Database Setup (Idempotent)
+-- Uyumplast OMS — Full Database Setup (Idempotent)
 -- ============================================================
 
 -- 1) ENUMS
@@ -526,10 +526,10 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, service_
 -- Default system settings
 INSERT INTO public.system_settings (key, value, description) VALUES
   ('order_no_prefix', 'ORD', 'Sipariş numarası ön eki'),
-  ('company_name', 'MyPlast', 'Firma adı'),
+  ('company_name', 'Uyumplast', 'Firma adı'),
   ('default_currency', 'TRY', 'Varsayılan para birimi'),
   ('default_unit', 'kg', 'Varsayılan birim'),
-  ('app_title', 'MyPlast OMS', 'Uygulama başlığı')
+  ('app_title', 'Uyumplast OMS', 'Uygulama başlığı')
 ON CONFLICT (key) DO NOTHING;
 
 -- Default definitions

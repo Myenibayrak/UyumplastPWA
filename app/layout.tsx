@@ -6,8 +6,8 @@ import { Toaster } from "@/components/ui/toaster";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "MyPlast OMS",
-  description: "MyPlast Sipariş Yönetim Sistemi",
+  title: "Uyumplast OMS",
+  description: "Uyumplast Sipariş Yönetim Sistemi",
   manifest: "/manifest.webmanifest",
 };
 

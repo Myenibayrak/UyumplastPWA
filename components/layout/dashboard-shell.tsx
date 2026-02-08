@@ -83,7 +83,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       )}>
         <div className="flex flex-col h-full">
           <div className="flex items-center justify-between p-4 border-b">
-            <h1 className="text-xl font-bold text-primary">MyPlast OMS</h1>
+            <h1 className="text-xl font-bold text-primary">Uyumplast OMS</h1>
             <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setSidebarOpen(false)}>
               <X className="h-5 w-5" />
             </Button>

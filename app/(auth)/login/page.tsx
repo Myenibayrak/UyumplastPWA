@@ -34,7 +34,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold text-primary">MyPlast OMS</CardTitle>
+          <CardTitle className="text-2xl font-bold text-primary">Uyumplast OMS</CardTitle>
           <CardDescription>Sipariş Yönetim Sistemine Giriş</CardDescription>
         </CardHeader>
         <CardContent>
@@ -44,7 +44,7 @@ export default function LoginPage() {
               <Input
                 id="email"
                 type="email"
-                placeholder="ornek@myplast.com"
+                placeholder="ornek@uyumplast.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required

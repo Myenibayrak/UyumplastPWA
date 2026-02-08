@@ -1,6 +1,6 @@
-# MyPlast OMS — Sipariş Yönetim Sistemi
+# Uyumplast OMS — Sipariş Yönetim Sistemi
 
-Production-ready Order Management System (PWA) for MyPlast.
+Production-ready Order Management System (PWA) for Uyumplast.
 
 ## Tech Stack
 
