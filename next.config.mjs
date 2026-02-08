@@ -11,7 +11,7 @@ const withPWA = withPWAInit({
 const nextConfig = {
   reactStrictMode: true,
   experimental: {
-    serverComponentsExternalPackages: ["pg"],
+    serverComponentsExternalPackages: ["pg", "postgres"],
   },
 };
 

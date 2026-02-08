@@ -172,5 +172,47 @@ export interface AuditLog {
   record_id: string | null;
   old_data: Record<string, unknown> | null;
   new_data: Record<string, unknown> | null;
+  ip_address: string | null;
   created_at: string;
+}
+
+export interface WorkflowSetting {
+  id: string;
+  name: string;
+  config: Record<string, unknown>;
+  description: string | null;
+  active: boolean;
+  updated_at: string;
+}
+
+export interface NotificationTemplate {
+  id: string;
+  event_type: string;
+  title_template: string;
+  body_template: string;
+  active: boolean;
+  updated_at: string;
+}
+
+export interface UiSetting {
+  id: string;
+  key: string;
+  value: Record<string, unknown>;
+  description: string | null;
+  updated_at: string;
+}
+
+export interface FeatureFlag {
+  id: string;
+  flag: string;
+  enabled: boolean;
+  description: string | null;
+  updated_at: string;
+}
+
+export interface RolePermission {
+  id: string;
+  role: AppRole;
+  permission: string;
+  allowed: boolean;
 }
