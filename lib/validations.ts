@@ -36,6 +36,22 @@ export const taskProgressSchema = z.object({
   progress_note: z.string().nullable().optional(),
 });
 
+export const stockCreateSchema = z.object({
+  category: z.enum(["film", "tape"]).default("film"),
+  product: z.string().min(1, "Ürün adı zorunlu"),
+  micron: z.number().nullable().optional(),
+  width: z.number().nullable().optional(),
+  kg: z.number().default(0),
+  quantity: z.number().int().default(0),
+  lot_no: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+});
+
+export const stockUpdateSchema = stockCreateSchema.partial();
+
+export type StockCreateInput = z.infer<typeof stockCreateSchema>;
+export type StockUpdateInput = z.infer<typeof stockUpdateSchema>;
+
 export type OrderCreateInput = z.infer<typeof orderCreateSchema>;
 export type OrderUpdateInput = z.infer<typeof orderUpdateSchema>;
 export type TaskAssignInput = z.infer<typeof taskAssignSchema>;

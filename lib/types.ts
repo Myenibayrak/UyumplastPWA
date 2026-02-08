@@ -216,3 +216,24 @@ export interface RolePermission {
   permission: string;
   allowed: boolean;
 }
+
+export type StockCategory = "film" | "tape";
+
+export const STOCK_CATEGORY_LABELS: Record<StockCategory, string> = {
+  film: "Film Stoğu",
+  tape: "Bant Stoğu",
+};
+
+export interface StockItem {
+  id: string;
+  category: StockCategory;
+  product: string;
+  micron: number | null;
+  width: number | null;
+  kg: number;
+  quantity: number;
+  lot_no: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
