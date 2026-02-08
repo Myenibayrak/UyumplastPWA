@@ -126,6 +126,60 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   if (roleCheck) return roleCheck;
 
   const supabase = createAdminClient();
+
+  // Get the plan before deleting to restore stock
+  const { data: plan } = await supabase
+    .from("cutting_plans")
+    .select("source_stock_id, source_kg, target_kg, order_id")
+    .eq("id", params.id)
+    .single();
+
+  // Restore stock if source_stock_id exists
+  if (plan && plan.source_stock_id && plan.source_kg) {
+    const { data: sourceStock } = await supabase
+      .from("stock_items")
+      .select("kg, quantity")
+      .eq("id", plan.source_stock_id)
+      .single();
+
+    if (sourceStock) {
+      const restoreKg = Number(plan.source_kg);
+      const newKg = sourceStock.kg + restoreKg;
+      await supabase
+        .from("stock_items")
+        .update({ kg: newKg, quantity: newKg > 0 ? (sourceStock.quantity || 0) + 1 : 0 })
+        .eq("id", plan.source_stock_id);
+
+      // Log stock movement
+      await supabase.from("stock_movements").insert({
+        stock_item_id: plan.source_stock_id,
+        movement_type: "in",
+        kg: restoreKg,
+        quantity: 0,
+        reason: "cutting_plan_cancelled",
+        reference_type: "cutting_plan",
+        reference_id: params.id,
+        notes: `Kesim planı iptal - stok iade`,
+        created_by: auth.userId,
+      });
+    }
+  }
+
+  // Reduce from order's stock_ready_kg
+  if (plan && plan.order_id) {
+    const targetKg = Number(plan.target_kg || plan.source_kg || 0);
+    const { data: orderData } = await supabase
+      .from("orders")
+      .select("stock_ready_kg")
+      .eq("id", plan.order_id)
+      .single();
+
+    if (orderData) {
+      const newReady = Math.max(0, (orderData.stock_ready_kg || 0) - targetKg);
+      await supabase.from("orders").update({ stock_ready_kg: newReady }).eq("id", plan.order_id);
+    }
+  }
+
   const { error } = await supabase.from("cutting_plans").delete().eq("id", params.id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ success: true });

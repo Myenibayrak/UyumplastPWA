@@ -65,10 +65,54 @@ export async function POST(request: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Update order status to in_production
+  // Deduct from source stock when plan is created
+  if (body.source_stock_id && body.source_kg) {
+    const { data: sourceStock } = await supabase
+      .from("stock_items")
+      .select("kg, quantity")
+      .eq("id", body.source_stock_id)
+      .single();
+
+    if (sourceStock) {
+      const deductKg = Number(body.source_kg);
+      const newKg = Math.max(0, sourceStock.kg - deductKg);
+      const newQty = newKg <= 0 ? 0 : sourceStock.quantity;
+      await supabase
+        .from("stock_items")
+        .update({ kg: newKg, quantity: newQty })
+        .eq("id", body.source_stock_id);
+
+      // Log stock movement
+      await supabase.from("stock_movements").insert({
+        stock_item_id: body.source_stock_id,
+        movement_type: "out",
+        kg: deductKg,
+        quantity: 0,
+        reason: "cutting_plan_reserved",
+        reference_type: "cutting_plan",
+        reference_id: data.id,
+        notes: `Kesim planı: ${body.source_product}`,
+        created_by: auth.userId,
+      });
+    }
+  }
+
+  // Update order status to in_production and add to stock_ready_kg
+  const { data: orderData } = await supabase
+    .from("orders")
+    .select("stock_ready_kg")
+    .eq("id", body.order_id)
+    .single();
+
+  const currentStockReady = orderData?.stock_ready_kg || 0;
+  const targetKg = Number(body.target_kg || body.source_kg || 0);
+
   const { error: orderUpdateError } = await supabase
     .from("orders")
-    .update({ status: "in_production" })
+    .update({
+      status: "in_production",
+      stock_ready_kg: currentStockReady + targetKg
+    })
     .eq("id", body.order_id);
   if (orderUpdateError) return NextResponse.json({ error: orderUpdateError.message }, { status: 500 });
 
