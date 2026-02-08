@@ -245,3 +245,64 @@ export interface StockItem {
   created_at: string;
   updated_at: string;
 }
+
+export type CuttingPlanStatus = "planned" | "in_progress" | "completed" | "cancelled";
+
+export const CUTTING_PLAN_STATUS_LABELS: Record<CuttingPlanStatus, string> = {
+  planned: "Planlandı",
+  in_progress: "Kesimde",
+  completed: "Tamamlandı",
+  cancelled: "İptal",
+};
+
+export interface CuttingPlan {
+  id: string;
+  order_id: string;
+  source_stock_id: string | null;
+  source_product: string;
+  source_micron: number | null;
+  source_width: number | null;
+  source_kg: number | null;
+  target_width: number | null;
+  target_kg: number | null;
+  target_quantity: number;
+  assigned_to: string | null;
+  planned_by: string;
+  status: CuttingPlanStatus;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  order?: Order;
+  assignee?: Profile;
+  planner?: Profile;
+  entries?: CuttingEntry[];
+}
+
+export interface CuttingEntry {
+  id: string;
+  cutting_plan_id: string;
+  order_id: string;
+  source_stock_id: string | null;
+  bobbin_label: string;
+  cut_width: number;
+  cut_kg: number;
+  cut_quantity: number;
+  is_order_piece: boolean;
+  entered_by: string;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface StockMovement {
+  id: string;
+  stock_item_id: string | null;
+  movement_type: "in" | "out";
+  kg: number;
+  quantity: number;
+  reason: string;
+  reference_type: string | null;
+  reference_id: string | null;
+  notes: string | null;
+  created_by: string;
+  created_at: string;
+}

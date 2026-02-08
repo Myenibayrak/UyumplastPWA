@@ -11,7 +11,7 @@ import type { AppRole } from "@/lib/types";
 import { ROLE_LABELS } from "@/lib/types";
 import { isWorkerRole, canEditSettings } from "@/lib/rbac";
 import {
-  Package, ClipboardList, Settings, LogOut, Menu, X, LayoutDashboard, Warehouse,
+  Package, ClipboardList, Settings, LogOut, Menu, X, LayoutDashboard, Warehouse, Factory,
 } from "lucide-react";
 
 interface NavItem {
@@ -55,6 +55,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     { href: "/dashboard", label: "Panel", icon: <LayoutDashboard className="h-5 w-5" /> },
     { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" />, roles: ["admin", "sales", "accounting"] },
     { href: "/dashboard/stock", label: "Stok", icon: <Warehouse className="h-5 w-5" />, roles: ["admin", "sales", "warehouse", "production"] },
+    { href: "/dashboard/production", label: "Üretim", icon: <Factory className="h-5 w-5" />, roles: ["admin", "production"] },
     { href: "/dashboard/tasks", label: "Görevler", icon: <ClipboardList className="h-5 w-5" /> },
     { href: "/dashboard/settings", label: "Ayarlar", icon: <Settings className="h-5 w-5" />, roles: ["admin"] },
   ];
