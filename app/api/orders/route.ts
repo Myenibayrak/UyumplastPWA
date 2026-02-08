@@ -17,7 +17,7 @@ export async function GET() {
       .order("created_at", { ascending: false });
 
     // Fallback to auth-bound server client if service-role env is missing/misconfigured.
-    if (error || !data) {
+    if (error || !data || data.length === 0) {
       const serverSupabase = createServerSupabase();
       const retry = await serverSupabase
         .from("orders")

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createServerSupabase } from "@/lib/supabase/server";
 import { requireAuth, requireRole, isAuthError } from "@/lib/auth/guards";
 import { orderUpdateSchema, taskAssignSchema } from "@/lib/validations";
 import { canViewFinance, stripFinanceFields } from "@/lib/rbac";
@@ -9,11 +10,23 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   if (isAuthError(auth)) return auth;
 
   const supabase = createAdminClient();
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("orders")
     .select("*, order_tasks(*, assignee:profiles!order_tasks_assigned_to_fkey(id, full_name, role))")
     .eq("id", params.id)
     .single();
+
+  // Fallback to auth-bound server client if service-role env is missing/misconfigured.
+  if (error || !data) {
+    const serverSupabase = createServerSupabase();
+    const retry = await serverSupabase
+      .from("orders")
+      .select("*, order_tasks(*, assignee:profiles!order_tasks_assigned_to_fkey(id, full_name, role))")
+      .eq("id", params.id)
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
 
   if (error) return NextResponse.json({ error: error.message }, { status: 404 });
 
