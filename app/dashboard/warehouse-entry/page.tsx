@@ -54,6 +54,19 @@ export default function WarehouseEntryPage() {
     }
   }, [selectedOrder, loadEntries]);
 
+  useEffect(() => {
+    if (!selectedOrder) return;
+    const refreshed = orders.find((o) => o.id === selectedOrder.id);
+    if (!refreshed) {
+      setSelectedOrder(null);
+      setEntries([]);
+      return;
+    }
+    if (refreshed !== selectedOrder) {
+      setSelectedOrder(refreshed);
+    }
+  }, [orders, selectedOrder]);
+
   async function handleSubmit() {
     if (!selectedOrder || !bobbinLabel || !kg) {
       toast({ title: "Hata", description: "Lütfen sipariş, bobin etiketi ve kg girin.", variant: "destructive" });
@@ -159,7 +172,8 @@ export default function WarehouseEntryPage() {
             filteredOrders.map((order) => {
               const readyPercent = getReadyPercent(order);
               const isReady = readyPercent >= 95;
-              const stockNeeded = Number(order.quantity || 0) - Number(order.stock_ready_kg || 0);
+              const totalReady = Number(order.stock_ready_kg || 0) + Number(order.production_ready_kg || 0);
+              const totalNeeded = Math.max(0, Number(order.quantity || 0) - totalReady);
 
               return (
                 <div
@@ -178,7 +192,10 @@ export default function WarehouseEntryPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-xs text-slate-500">
-                        {order.stock_ready_kg || 0} / {order.quantity} kg
+                        {totalReady} / {order.quantity} kg
+                      </p>
+                      <p className="text-[11px] text-slate-400">
+                        Depo: {order.stock_ready_kg || 0} | Üretim: {order.production_ready_kg || 0}
                       </p>
                     </div>
                   </div>
@@ -189,7 +206,7 @@ export default function WarehouseEntryPage() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-xs font-medium">{stockNeeded > 0 ? `${stockNeeded} kg gerekli` : "Hazır!"}</p>
+                      <p className="text-xs font-medium">{totalNeeded > 0 ? `${totalNeeded} kg gerekli` : "Hazır!"}</p>
                     </div>
                   </div>
                 </div>
@@ -311,13 +328,18 @@ export default function WarehouseEntryPage() {
                   <p className="font-medium">{selectedOrder?.product_type}</p>
                 </div>
                 <div>
-                  <p className="text-slate-500">Mevcut Hazır</p>
-                  <p className="font-medium">{selectedOrder?.stock_ready_kg || 0} kg</p>
+                  <p className="text-slate-500">Mevcut Hazır (Toplam)</p>
+                  <p className="font-medium">
+                    {(Number(selectedOrder?.stock_ready_kg || 0) + Number(selectedOrder?.production_ready_kg || 0))} kg
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Depo: {selectedOrder?.stock_ready_kg || 0} | Üretim: {selectedOrder?.production_ready_kg || 0}
+                  </p>
                 </div>
                 <div>
                   <p className="text-slate-500">Kalan İhtiyaç</p>
                   <p className="font-medium">
-                    {Number(selectedOrder?.quantity || 0) - Number(selectedOrder?.stock_ready_kg || 0)} kg
+                    {Math.max(0, Number(selectedOrder?.quantity || 0) - (Number(selectedOrder?.stock_ready_kg || 0) + Number(selectedOrder?.production_ready_kg || 0)))} kg
                   </p>
                 </div>
               </div>

@@ -32,6 +32,29 @@ export function canViewDashboard(role: AppRole): boolean {
   return true;
 }
 
+function normalizeTurkish(value: string) {
+  return value
+    .toLocaleLowerCase("tr-TR")
+    .replace(/ı/g, "i")
+    .replace(/ğ/g, "g")
+    .replace(/ü/g, "u")
+    .replace(/ş/g, "s")
+    .replace(/ö/g, "o")
+    .replace(/ç/g, "c");
+}
+
+export function canViewStock(role: AppRole | null | undefined, fullName?: string | null): boolean {
+  if (!role) return false;
+  if (role === "sales") return true;
+
+  const normalized = normalizeTurkish(fullName || "");
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  const hasNamedAccess = tokens.some((t) => t === "muhammed" || t === "mustafa");
+  const isFactoryManager = normalized.includes("fabrika muduru");
+
+  return hasNamedAccess || isFactoryManager;
+}
+
 export function getDefaultRedirect(role: AppRole): string {
   if (isWorkerRole(role)) return "/dashboard/tasks";
   return "/dashboard";

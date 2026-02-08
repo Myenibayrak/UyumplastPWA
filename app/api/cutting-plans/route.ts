@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, requireRole, isAuthError } from "@/lib/auth/guards";
+import { cuttingPlanCreateSchema } from "@/lib/validations";
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -37,24 +38,29 @@ export async function POST(request: NextRequest) {
   const roleCheck = requireRole(auth, ["admin", "production"]);
   if (roleCheck) return roleCheck;
 
-  let body: Record<string, unknown>;
+  let body: unknown;
   try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
+
+  const parsed = cuttingPlanCreateSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
 
   const supabase = createAdminClient();
 
   const planData = {
-    order_id: body.order_id,
-    source_stock_id: body.source_stock_id || null,
-    source_product: body.source_product,
-    source_micron: body.source_micron || null,
-    source_width: body.source_width || null,
-    source_kg: body.source_kg || null,
-    target_width: body.target_width || null,
-    target_kg: body.target_kg || null,
-    target_quantity: body.target_quantity || 1,
-    assigned_to: body.assigned_to || null,
+    order_id: parsed.data.order_id,
+    source_stock_id: parsed.data.source_stock_id ?? null,
+    source_product: parsed.data.source_product,
+    source_micron: parsed.data.source_micron ?? null,
+    source_width: parsed.data.source_width ?? null,
+    source_kg: parsed.data.source_kg ?? null,
+    target_width: parsed.data.target_width ?? null,
+    target_kg: parsed.data.target_kg ?? null,
+    target_quantity: parsed.data.target_quantity ?? 1,
+    assigned_to: parsed.data.assigned_to ?? null,
     planned_by: auth.userId,
-    notes: body.notes || null,
+    notes: parsed.data.notes ?? null,
   };
 
   const { data, error } = await supabase
@@ -65,50 +71,27 @@ export async function POST(request: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Deduct from source stock when plan is created
-  if (body.source_stock_id && body.source_kg) {
-    const { data: sourceStock } = await supabase
-      .from("stock_items")
-      .select("kg, quantity")
-      .eq("id", body.source_stock_id)
-      .single();
-
-    if (sourceStock) {
-      const deductKg = Number(body.source_kg);
-      const newKg = Math.max(0, sourceStock.kg - deductKg);
-      const newQty = newKg <= 0 ? 0 : sourceStock.quantity;
-      await supabase
-        .from("stock_items")
-        .update({ kg: newKg, quantity: newQty })
-        .eq("id", body.source_stock_id);
-
-      // Log stock movement
-      await supabase.from("stock_movements").insert({
-        stock_item_id: body.source_stock_id,
-        movement_type: "out",
-        kg: deductKg,
-        quantity: 0,
-        reason: "cutting_plan_reserved",
-        reference_type: "cutting_plan",
-        reference_id: data.id,
-        notes: `Kesim planı: ${body.source_product}`,
-        created_by: auth.userId,
-      });
-    }
-  }
-
   // Update order status to in_production.
   const { error: orderUpdateError } = await supabase
     .from("orders")
     .update({
       status: "in_production",
     })
-    .eq("id", body.order_id);
+    .eq("id", parsed.data.order_id);
   if (orderUpdateError) return NextResponse.json({ error: orderUpdateError.message }, { status: 500 });
+
+  await supabase.from("audit_logs").insert({
+    user_id: auth.userId,
+    action: "INSERT",
+    table_name: "cutting_plans",
+    record_id: data.id,
+    old_data: null,
+    new_data: data,
+  });
 
   // Notify assigned operator
   if (planData.assigned_to) {
-    const orderRes = await supabase.from("orders").select("order_no, customer").eq("id", body.order_id).single();
+    const orderRes = await supabase.from("orders").select("order_no, customer").eq("id", parsed.data.order_id).single();
     const order = orderRes.data;
     if (order) {
       await supabase.from("notifications").insert({

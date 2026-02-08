@@ -7,12 +7,13 @@ import { createClient } from "@/lib/supabase/client";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { canViewStock } from "@/lib/rbac";
 import type { AppRole } from "@/lib/types";
 import { ROLE_LABELS } from "@/lib/types";
 import {
   LogOut, Menu, X,
   Package, ClipboardList, Settings, LayoutDashboard,
-  Wrench,
+  Wrench, Warehouse, Factory,
 } from "lucide-react";
 
 interface NavItem {
@@ -25,6 +26,7 @@ interface NavItem {
 // Role bazlı menü tanımları
 const MENU_BY_ROLE: Record<AppRole, NavItem[]> = {
   admin: [
+    { href: "/dashboard", label: "Genel Durum", icon: <LayoutDashboard className="h-5 w-5" /> },
     { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
     { href: "/dashboard/tasks", label: "Görevler", icon: <ClipboardList className="h-5 w-5" /> },
     { href: "/dashboard/production", label: "Üretim Planları", icon: <LayoutDashboard className="h-5 w-5" /> },
@@ -34,26 +36,30 @@ const MENU_BY_ROLE: Record<AppRole, NavItem[]> = {
     { href: "/dashboard/settings", label: "Ayarlar", icon: <Settings className="h-5 w-5" /> },
   ],
   sales: [
+    { href: "/dashboard", label: "Genel Durum", icon: <LayoutDashboard className="h-5 w-5" /> },
     { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
     { href: "/dashboard/tasks", label: "Görevler", icon: <ClipboardList className="h-5 w-5" /> },
     { href: "/dashboard/production", label: "Üretim", icon: <LayoutDashboard className="h-5 w-5" /> },
+    { href: "/dashboard/stock", label: "Stok Takibi", icon: <Package className="h-5 w-5" /> },
   ],
   production: [
     { href: "/dashboard/tasks", label: "Görevlerim", icon: <ClipboardList className="h-5 w-5" /> },
-    { href: "/dashboard/production", label: "Üretim Planları", icon: <LayoutDashboard className="h-5 w-5" /> },
     { href: "/dashboard/bobin-entry", label: "Bobin Girişi", icon: <Wrench className="h-5 w-5" /> },
+    { href: "/dashboard/production", label: "Üretim Planları", icon: <Factory className="h-5 w-5" /> },
+    { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
   ],
   warehouse: [
-    { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
     { href: "/dashboard/tasks", label: "Görevlerim", icon: <ClipboardList className="h-5 w-5" /> },
-    { href: "/dashboard/warehouse-entry", label: "Depo Girişi", icon: <LayoutDashboard className="h-5 w-5" /> },
+    { href: "/dashboard/warehouse-entry", label: "Depo Girişi", icon: <Warehouse className="h-5 w-5" /> },
     { href: "/dashboard/stock", label: "Stok", icon: <Package className="h-5 w-5" /> },
+    { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
   ],
   shipping: [
-    { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
     { href: "/dashboard/tasks", label: "Görevlerim", icon: <ClipboardList className="h-5 w-5" /> },
+    { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
   ],
   accounting: [
+    { href: "/dashboard", label: "Genel Durum", icon: <LayoutDashboard className="h-5 w-5" /> },
     { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
   ],
 };
@@ -89,7 +95,21 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   }
 
   // Role'a göre menü
-  const navItems: NavItem[] = role ? MENU_BY_ROLE[role] : [];
+  const navItems: NavItem[] = role
+    ? (() => {
+        const base = MENU_BY_ROLE[role];
+        const hasStockAccess = canViewStock(role, fullName);
+        const filtered = base.filter((item) => item.href !== "/dashboard/stock" || hasStockAccess);
+        if (hasStockAccess && !filtered.some((item) => item.href === "/dashboard/stock")) {
+          filtered.push({ href: "/dashboard/stock", label: "Stok", icon: <Package className="h-5 w-5" /> });
+        }
+        return filtered;
+      })()
+    : [];
+  const isActiveLink = (href: string) =>
+    href === "/dashboard"
+      ? pathname === href
+      : pathname === href || pathname.startsWith(`${href}/`);
 
   if (!role) {
     return <div className="min-h-screen flex items-center justify-center"><p>Yükleniyor...</p></div>;
@@ -125,7 +145,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                 onClick={() => setSidebarOpen(false)}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                  pathname === item.href || pathname.startsWith(item.href + "/")
+                  isActiveLink(item.href)
                     ? "bg-blue-600 text-white"
                     : "text-slate-600 hover:bg-slate-100"
                 )}

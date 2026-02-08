@@ -37,6 +37,36 @@ export const taskProgressSchema = z.object({
   progress_note: z.string().nullable().optional(),
 });
 
+export const cuttingPlanCreateSchema = z.object({
+  order_id: z.string().uuid(),
+  source_stock_id: z.string().uuid().nullable().optional(),
+  source_product: z.string().min(1, "Kaynak ürün zorunlu"),
+  source_micron: z.number().nullable().optional(),
+  source_width: z.number().nullable().optional(),
+  source_kg: z.number().nullable().optional(),
+  target_width: z.number().nullable().optional(),
+  target_kg: z.number().nullable().optional(),
+  target_quantity: z.number().int().positive().default(1),
+  assigned_to: z.string().uuid().nullable().optional(),
+  notes: z.string().nullable().optional(),
+});
+
+export const cuttingPlanUpdateSchema = z.object({
+  status: z.enum(["planned", "in_progress", "completed", "cancelled"]).optional(),
+  assigned_to: z.string().uuid().nullable().optional(),
+  source_stock_id: z.string().uuid().nullable().optional(),
+  source_product: z.string().min(1).optional(),
+  source_micron: z.number().nullable().optional(),
+  source_width: z.number().nullable().optional(),
+  source_kg: z.number().nullable().optional(),
+  target_width: z.number().nullable().optional(),
+  target_kg: z.number().nullable().optional(),
+  target_quantity: z.number().int().positive().optional(),
+  notes: z.string().nullable().optional(),
+}).refine((val) => Object.keys(val).length > 0, {
+  message: "En az bir güncelleme alanı gönderilmeli",
+});
+
 export const stockCreateSchema = z.object({
   category: z.enum(["film", "tape"]).default("film"),
   product: z.string().min(1, "Ürün adı zorunlu"),
@@ -57,3 +87,5 @@ export type OrderCreateInput = z.infer<typeof orderCreateSchema>;
 export type OrderUpdateInput = z.infer<typeof orderUpdateSchema>;
 export type TaskAssignInput = z.infer<typeof taskAssignSchema>;
 export type TaskProgressInput = z.infer<typeof taskProgressSchema>;
+export type CuttingPlanCreateInput = z.infer<typeof cuttingPlanCreateSchema>;
+export type CuttingPlanUpdateInput = z.infer<typeof cuttingPlanUpdateSchema>;

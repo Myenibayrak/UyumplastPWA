@@ -6,7 +6,7 @@ import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel,
   getPaginationRowModel, flexRender, type ColumnDef, type SortingState,
 } from "@tanstack/react-table";
-import type { StockItem, StockCategory, AppRole } from "@/lib/types";
+import type { StockItem, StockCategory, AppRole, StockMovement } from "@/lib/types";
 import { STOCK_CATEGORY_LABELS } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowUpDown, ChevronLeft, ChevronRight, Plus, Loader2, Trash2, Package, FilterX } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import { canManageOrders } from "@/lib/rbac";
+import { canViewStock } from "@/lib/rbac";
+
+type StockMovementRow = StockMovement & {
+  stock_item?: Pick<StockItem, "category" | "product" | "micron" | "width" | "lot_no"> | null;
+  creator?: { full_name?: string | null } | null;
+};
 
 function InlineStockCell({ value, field, itemId, type = "text", onSaved }: {
   value: string | number | null;
@@ -86,8 +91,10 @@ function InlineStockCell({ value, field, itemId, type = "text", onSaved }: {
 
 export default function StockPage() {
   const [items, setItems] = useState<StockItem[]>([]);
+  const [movements, setMovements] = useState<StockMovementRow[]>([]);
   const [category, setCategory] = useState<StockCategory>("film");
   const [role, setRole] = useState<AppRole | null>(null);
+  const [fullName, setFullName] = useState<string>("");
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState("");
   const [addOpen, setAddOpen] = useState(false);
@@ -101,7 +108,8 @@ export default function StockPage() {
   const [fWidthMin, setFWidthMin] = useState("");
   const [fWidthMax, setFWidthMax] = useState("");
 
-  const canEdit = role ? canManageOrders(role) || role === "warehouse" || role === "production" : false;
+  const canView = canViewStock(role, fullName);
+  const canEdit = canView && (role === "admin" || role === "warehouse");
 
   const hasActiveFilters = fProduct || fMicronMin || fMicronMax || fWidthMin || fWidthMax;
 
@@ -115,21 +123,38 @@ export default function StockPage() {
   }
 
   const loadStock = useCallback(async () => {
-    const res = await fetch(`/api/stock?category=${category}`);
-    if (res.ok) {
-      const data: StockItem[] = await res.json();
+    if (!canView) {
+      setItems([]);
+      setMovements([]);
+      setProducts([]);
+      return;
+    }
+    const [stockRes, movementRes] = await Promise.all([
+      fetch(`/api/stock?category=${category}`),
+      fetch(`/api/stock-movements?category=${category}&limit=80`),
+    ]);
+
+    if (stockRes.ok) {
+      const data: StockItem[] = await stockRes.json();
       setItems(data);
       const uniqueProducts = Array.from(new Set(data.map((d) => d.product))).sort();
       setProducts(uniqueProducts);
     }
-  }, [category]);
+    if (movementRes.ok) {
+      const moveData: StockMovementRow[] = await movementRes.json();
+      setMovements(moveData);
+    }
+  }, [category, canView]);
 
   useEffect(() => {
     const supabase = createClient();
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return;
-      const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-      if (profile) setRole(profile.role as AppRole);
+      const { data: profile } = await supabase.from("profiles").select("role, full_name").eq("id", user.id).single();
+      if (profile) {
+        setRole(profile.role as AppRole);
+        setFullName(profile.full_name || "");
+      }
     });
   }, []);
 
@@ -283,6 +308,15 @@ export default function StockPage() {
 
   return (
     <div className="space-y-4">
+      {role && !canView ? (
+        <div className="max-w-3xl mx-auto bg-white rounded-lg border border-slate-200 p-8 text-center">
+          <h1 className="text-xl font-semibold text-slate-900 mb-2">Stok Erişimi Yok</h1>
+          <p className="text-sm text-slate-600">
+            Stok ekranı sadece Satış, Fabrika Müdürü, Muhammed ve Mustafa için açıktır.
+          </p>
+        </div>
+      ) : (
+        <>
       <div className="flex items-center gap-3 flex-wrap">
         <Package className="h-5 w-5 text-blue-600" />
         <h1 className="text-xl font-bold">Stok Yönetimi</h1>
@@ -400,6 +434,58 @@ export default function StockPage() {
         </Button>
       </div>
 
+      <div className="rounded-lg border bg-white shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b bg-gray-50">
+          <h2 className="text-sm font-semibold text-gray-700">Stok Hareket Geçmişi</h2>
+        </div>
+        <div className="max-h-[380px] overflow-auto">
+          <table className="w-full text-xs border-collapse">
+            <thead className="bg-gray-50 sticky top-0 z-10">
+              <tr>
+                <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Tarih</th>
+                <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Hareket</th>
+                <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Ürün</th>
+                <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Kg</th>
+                <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Adet</th>
+                <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Sebep</th>
+                <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Kullanıcı</th>
+              </tr>
+            </thead>
+            <tbody>
+              {movements.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">
+                    Hareket kaydı yok
+                  </td>
+                </tr>
+              ) : (
+                movements.map((m, i) => (
+                  <tr key={m.id} className={`border-b ${i % 2 === 0 ? "bg-white" : "bg-gray-50/40"}`}>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {new Date(m.created_at).toLocaleString("tr-TR")}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <span className={m.movement_type === "in" ? "text-green-700 font-medium" : "text-red-700 font-medium"}>
+                        {m.movement_type === "in" ? "Giriş" : "Çıkış"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      {m.stock_item?.product || "—"}
+                      {m.stock_item?.micron ? ` ${m.stock_item.micron}µ` : ""}
+                      {m.stock_item?.width ? ` ${m.stock_item.width}mm` : ""}
+                    </td>
+                    <td className="px-3 py-2">{Number(m.kg || 0).toLocaleString("tr-TR")}</td>
+                    <td className="px-3 py-2">{Number(m.quantity || 0).toLocaleString("tr-TR")}</td>
+                    <td className="px-3 py-2">{m.reason}</td>
+                    <td className="px-3 py-2">{m.creator?.full_name || "—"}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -434,6 +520,8 @@ export default function StockPage() {
           </div>
         </DialogContent>
       </Dialog>
+        </>
+      )}
     </div>
   );
 }

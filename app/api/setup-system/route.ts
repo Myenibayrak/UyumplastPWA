@@ -575,7 +575,7 @@ BEGIN
   SET production_ready_kg = (
     SELECT COALESCE(SUM(kg), 0)
     FROM public.production_bobins
-    WHERE order_id = v_order_id AND status = 'produced'
+    WHERE order_id = v_order_id AND status IN ('produced', 'warehouse', 'ready')
   )
   WHERE id = v_order_id;
 
@@ -585,7 +585,7 @@ BEGIN
     SET production_ready_kg = (
       SELECT COALESCE(SUM(kg), 0)
       FROM public.production_bobins
-      WHERE order_id = OLD.order_id AND status = 'produced'
+      WHERE order_id = OLD.order_id AND status IN ('produced', 'warehouse', 'ready')
     )
     WHERE id = OLD.order_id;
   END IF;

@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, requireRole, isAuthError } from "@/lib/auth/guards";
+import { PRODUCTION_READY_STATUSES } from "@/lib/production-ready";
+
+async function recalculateProductionReadyKg(supabase: ReturnType<typeof createAdminClient>, orderId: string) {
+  const { data: rows } = await supabase
+    .from("production_bobins")
+    .select("kg")
+    .eq("order_id", orderId)
+    .in("status", [...PRODUCTION_READY_STATUSES]);
+
+  const totalKg = (rows ?? []).reduce((sum: number, r: { kg: number }) => sum + Number(r.kg || 0), 0);
+  await supabase.from("orders").update({ production_ready_kg: totalKg }).eq("id", orderId);
+}
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -51,6 +63,11 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
+  const meter = Number(body.meter);
+  const kg = Number(body.kg);
+  if (!Number.isFinite(meter) || meter <= 0 || !Number.isFinite(kg) || kg <= 0) {
+    return NextResponse.json({ error: "meter ve kg pozitif sayı olmalı" }, { status: 400 });
+  }
 
   const supabase = createAdminClient();
 
@@ -65,8 +82,8 @@ export async function POST(request: NextRequest) {
     order_id: body.order_id,
     cutting_plan_id: body.cutting_plan_id || null,
     bobbin_no: body.bobbin_no,
-    meter: Number(body.meter),
-    kg: Number(body.kg),
+    meter,
+    kg,
     fire_kg: body.fire_kg ? Number(body.fire_kg) : 0,
     product_type: order?.product_type || "",
     micron: order?.micron,
@@ -83,6 +100,19 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Trigger olmayan ortamlarda da tutarlılık için toplamı API'de garanti et.
+  await recalculateProductionReadyKg(supabase, body.order_id as string);
+
+  // Şeffaflık için işlem geçmişi (audit) tut.
+  await supabase.from("audit_logs").insert({
+    user_id: auth.userId,
+    action: "INSERT",
+    table_name: "production_bobins",
+    record_id: data.id,
+    old_data: null,
+    new_data: data,
+  });
 
   return NextResponse.json(data, { status: 201 });
 }

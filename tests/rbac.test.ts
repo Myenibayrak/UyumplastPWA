@@ -7,6 +7,7 @@ import {
   canAssignTasks,
   canViewAllOrders,
   canEditSettings,
+  canViewStock,
   hasAnyRole,
   stripFinanceFields,
 } from "@/lib/rbac";
@@ -78,6 +79,23 @@ describe("RBAC helpers", () => {
       expect(canEditSettings("admin")).toBe(true);
       expect(canEditSettings("sales")).toBe(false);
       expect(canEditSettings("warehouse")).toBe(false);
+    });
+  });
+
+  describe("canViewStock", () => {
+    it("allows sales role", () => {
+      expect(canViewStock("sales", "Rastgele Kullanıcı")).toBe(true);
+    });
+    it("allows Muhammed and Mustafa by name", () => {
+      expect(canViewStock("warehouse", "Muhammed Yenibayrak")).toBe(true);
+      expect(canViewStock("shipping", "Mustafa Yılmaz")).toBe(true);
+    });
+    it("allows factory manager by title", () => {
+      expect(canViewStock("production", "Fabrika Müdürü Ahmet")).toBe(true);
+    });
+    it("blocks others", () => {
+      expect(canViewStock("warehouse", "Ayşe Demir")).toBe(false);
+      expect(canViewStock("admin", "İmren Kaya")).toBe(false);
     });
   });
 

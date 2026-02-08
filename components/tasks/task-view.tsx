@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,8 +27,8 @@ const statusColor: Record<string, string> = {
 const priorityColor: Record<string, string> = {
   low: "text-gray-500",
   normal: "text-blue-600",
-  high: "text-orange-600 font-bold",
-  urgent: "text-red-600 font-bold animate-pulse",
+  high: "text-orange-700 font-semibold",
+  urgent: "text-red-700 font-bold",
 };
 
 const ACTION_BUTTONS: { status: TaskStatus; label: string; color: string }[] = [
@@ -42,6 +42,27 @@ export function TaskView({ tasks, onUpdate }: TaskViewProps) {
   const [updating, setUpdating] = useState<string | null>(null);
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+
+  const sortedTasks = useMemo(() => {
+    const priorityRank: Record<string, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
+    return [...tasks].sort((a, b) => {
+      const pDiff = (priorityRank[a.priority] ?? 99) - (priorityRank[b.priority] ?? 99);
+      if (pDiff !== 0) return pDiff;
+      const aDue = a.due_date ? new Date(a.due_date).getTime() : Number.MAX_SAFE_INTEGER;
+      const bDue = b.due_date ? new Date(b.due_date).getTime() : Number.MAX_SAFE_INTEGER;
+      return aDue - bDue;
+    });
+  }, [tasks]);
+
+  const stats = useMemo(() => {
+    const now = Date.now();
+    const urgent = tasks.filter((t) => t.priority === "urgent").length;
+    const overdue = tasks.filter((t) => t.due_date && new Date(t.due_date).getTime() < now && t.status !== "done").length;
+    const active = tasks.filter((t) => ["pending", "in_progress", "preparing", "ready"].includes(t.status)).length;
+    const done = tasks.filter((t) => t.status === "done").length;
+    return { urgent, overdue, active, done };
+  }, [tasks]);
 
   async function handleStatusChange(taskId: string, status: TaskStatus) {
     setUpdating(taskId);
@@ -77,66 +98,97 @@ export function TaskView({ tasks, onUpdate }: TaskViewProps) {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {tasks.map((task) => (
-        <Card key={task.id} className={`border-2 ${statusColor[task.status] || ""}`}>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg">{task.order_no}</CardTitle>
-              <Badge variant="outline" className={priorityColor[task.priority] || ""}>
-                {PRIORITY_LABELS[task.priority]}
-              </Badge>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge>{TASK_STATUS_LABELS[task.status]}</Badge>
-              <span className="text-sm text-muted-foreground">{task.customer}</span>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div><span className="text-muted-foreground">Ürün:</span> {task.product_type}</div>
-              {task.micron && <div><span className="text-muted-foreground">Mikron:</span> {task.micron}</div>}
-              {task.width && <div><span className="text-muted-foreground">En:</span> {task.width} mm</div>}
-              {task.quantity && <div><span className="text-muted-foreground">Miktar:</span> {task.quantity} {task.unit}</div>}
-              {task.trim_width && <div><span className="text-muted-foreground">Kesim Eni:</span> {task.trim_width}</div>}
-              {task.ship_date && <div><span className="text-muted-foreground">Sevk:</span> {new Date(task.ship_date).toLocaleDateString("tr-TR")}</div>}
-            </div>
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Aktif</p><p className="text-xl font-bold">{stats.active}</p></CardContent></Card>
+        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Acil</p><p className="text-xl font-bold text-red-700">{stats.urgent}</p></CardContent></Card>
+        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Termin Geçmiş</p><p className="text-xl font-bold text-orange-700">{stats.overdue}</p></CardContent></Card>
+        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Tamamlanan</p><p className="text-xl font-bold text-green-700">{stats.done}</p></CardContent></Card>
+      </div>
 
-            {task.order_notes && (
-              <p className="text-sm text-muted-foreground bg-muted/50 p-2 rounded">{task.order_notes}</p>
-            )}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {sortedTasks.map((task) => {
+          const isOverdue = !!task.due_date && new Date(task.due_date).getTime() < Date.now() && task.status !== "done";
+          const isExpanded = expandedTaskId === task.id;
+          return (
+            <Card key={task.id} className={`border-2 ${statusColor[task.status] || ""} ${task.priority === "urgent" ? "ring-1 ring-red-300" : ""}`}>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle className="text-lg">{task.order_no}</CardTitle>
+                  <Badge variant="outline" className={priorityColor[task.priority] || ""}>
+                    {PRIORITY_LABELS[task.priority]}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Badge>{TASK_STATUS_LABELS[task.status]}</Badge>
+                  {task.due_date && (
+                    <Badge variant={isOverdue ? "destructive" : "secondary"}>
+                      Termin: {new Date(task.due_date).toLocaleDateString("tr-TR")}
+                    </Badge>
+                  )}
+                  <span className="text-sm text-muted-foreground">{task.customer}</span>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div><span className="text-muted-foreground">Ürün:</span> {task.product_type}</div>
+                  {task.micron && <div><span className="text-muted-foreground">Mikron:</span> {task.micron}</div>}
+                  {task.width && <div><span className="text-muted-foreground">En:</span> {task.width} mm</div>}
+                  {task.quantity && <div><span className="text-muted-foreground">Miktar:</span> {task.quantity} {task.unit}</div>}
+                </div>
 
-            <div className="space-y-2">
-              <Input
-                type="number"
-                placeholder="Hazır miktar"
-                value={quantities[task.id] || ""}
-                onChange={(e) => setQuantities((prev) => ({ ...prev, [task.id]: e.target.value }))}
-                className="h-12 text-lg"
-              />
-              <Textarea
-                placeholder="İlerleme notu..."
-                value={notes[task.id] || ""}
-                onChange={(e) => setNotes((prev) => ({ ...prev, [task.id]: e.target.value }))}
-                className="min-h-[60px]"
-              />
-            </div>
+                {(task.progress_note || task.ready_quantity) && (
+                  <div className="text-xs text-muted-foreground bg-muted/40 p-2 rounded">
+                    {task.ready_quantity != null && <div>Son Hazır Miktar: {task.ready_quantity}</div>}
+                    {task.progress_note && <div>Son Not: {task.progress_note}</div>}
+                  </div>
+                )}
 
-            <div className="grid grid-cols-2 gap-2">
-              {ACTION_BUTTONS.filter((btn) => btn.status !== task.status).map((btn) => (
-                <Button
-                  key={btn.status}
-                  className={`h-14 text-lg font-bold ${btn.color}`}
-                  disabled={updating === task.id}
-                  onClick={() => handleStatusChange(task.id, btn.status)}
-                >
-                  {updating === task.id ? "..." : btn.label}
-                </Button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      ))}
+                {task.order_notes && (
+                  <p className="text-sm text-muted-foreground bg-muted/50 p-2 rounded">{task.order_notes}</p>
+                )}
+
+                <div className="flex gap-2">
+                  {ACTION_BUTTONS.filter((btn) => btn.status !== task.status).map((btn) => (
+                    <Button
+                      key={btn.status}
+                      className={`h-9 text-sm font-semibold ${btn.color}`}
+                      disabled={updating === task.id}
+                      onClick={() => handleStatusChange(task.id, btn.status)}
+                    >
+                      {updating === task.id ? "..." : btn.label}
+                    </Button>
+                  ))}
+                  <Button
+                    variant="outline"
+                    className="h-9 text-sm"
+                    onClick={() => setExpandedTaskId((prev) => (prev === task.id ? null : task.id))}
+                  >
+                    {isExpanded ? "Güncellemeyi Gizle" : "Detaylı Güncelle"}
+                  </Button>
+                </div>
+
+                {isExpanded && (
+                  <div className="space-y-2 border-t pt-3">
+                    <Input
+                      type="number"
+                      placeholder="Hazır miktar (opsiyonel)"
+                      value={quantities[task.id] || ""}
+                      onChange={(e) => setQuantities((prev) => ({ ...prev, [task.id]: e.target.value }))}
+                    />
+                    <Textarea
+                      placeholder="İlerleme notu (opsiyonel)"
+                      value={notes[task.id] || ""}
+                      onChange={(e) => setNotes((prev) => ({ ...prev, [task.id]: e.target.value }))}
+                      className="min-h-[70px]"
+                    />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
     </div>
   );
 }

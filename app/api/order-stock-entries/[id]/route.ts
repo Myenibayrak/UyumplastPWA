@@ -15,11 +15,20 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   // Get entry before deleting to update order stock_ready_kg
   const { data: entry } = await supabase
     .from("order_stock_entries")
-    .select("order_id, kg")
+    .select("*")
     .eq("id", params.id)
     .single();
 
   if (entry) {
+    await supabase.from("audit_logs").insert({
+      user_id: auth.userId,
+      action: "DELETE",
+      table_name: "order_stock_entries",
+      record_id: params.id,
+      old_data: entry,
+      new_data: null,
+    });
+
     // Delete the entry
     const { error } = await supabase.from("order_stock_entries").delete().eq("id", params.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -30,7 +39,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
       .select("kg")
       .eq("order_id", entry.order_id);
 
-    const totalKg = (remainingEntries ?? []).reduce((sum: number, e: { kg: number }) => sum + e.kg, 0);
+    const totalKg = (remainingEntries ?? []).reduce((sum: number, e: { kg: number }) => sum + Number(e.kg || 0), 0);
 
     await supabase
       .from("orders")

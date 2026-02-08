@@ -47,13 +47,17 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
+  const kg = Number(body.kg);
+  if (!Number.isFinite(kg) || kg <= 0) {
+    return NextResponse.json({ error: "kg pozitif bir sayı olmalı" }, { status: 400 });
+  }
 
   const supabase = createAdminClient();
 
   const entryData = {
     order_id: body.order_id,
     bobbin_label: body.bobbin_label,
-    kg: Number(body.kg),
+    kg,
     notes: body.notes || null,
     entered_by: auth.userId,
   };
@@ -68,6 +72,23 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Trigger olmayan ortamlarda da tutarlılık için toplamı API'de garanti et.
+  const { data: allEntries } = await supabase
+    .from("order_stock_entries")
+    .select("kg")
+    .eq("order_id", entryData.order_id as string);
+  const totalKg = (allEntries ?? []).reduce((sum: number, e: { kg: number }) => sum + Number(e.kg || 0), 0);
+  await supabase.from("orders").update({ stock_ready_kg: totalKg }).eq("id", entryData.order_id as string);
+
+  await supabase.from("audit_logs").insert({
+    user_id: auth.userId,
+    action: "INSERT",
+    table_name: "order_stock_entries",
+    record_id: data.id,
+    old_data: null,
+    new_data: data,
+  });
 
   return NextResponse.json(data, { status: 201 });
 }

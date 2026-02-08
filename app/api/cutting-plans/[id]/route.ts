@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, requireRole, isAuthError } from "@/lib/auth/guards";
+import { cuttingPlanUpdateSchema } from "@/lib/validations";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireAuth();
@@ -30,38 +31,54 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   const roleCheck = requireRole(auth, ["admin", "production"]);
   if (roleCheck) return roleCheck;
 
-  let body: Record<string, unknown>;
+  let body: unknown;
   try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
 
-  const supabase = createAdminClient();
-
-  const updateData: Record<string, unknown> = {};
-  const allowed = ["status", "assigned_to", "source_stock_id", "source_product", "source_micron", "source_width", "source_kg", "target_width", "target_kg", "target_quantity", "notes"];
-  for (const key of allowed) {
-    if (key in body) updateData[key] = body[key];
+  const parsed = cuttingPlanUpdateSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
+
+  const supabase = createAdminClient();
+  const { data: before } = await supabase
+    .from("cutting_plans")
+    .select("*")
+    .eq("id", params.id)
+    .single();
 
   const { data, error } = await supabase
     .from("cutting_plans")
-    .update(updateData)
+    .update(parsed.data)
     .eq("id", params.id)
     .select("*, order:orders!inner(id, order_no, customer, created_by)")
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error || !data) return NextResponse.json({ error: error?.message || "Plan güncellenemedi" }, { status: 500 });
+
+  await supabase.from("audit_logs").insert({
+    user_id: auth.userId,
+    action: "UPDATE",
+    table_name: "cutting_plans",
+    record_id: params.id,
+    old_data: before ?? null,
+    new_data: data,
+  });
+
+  const previousStatus = (before as { status?: string } | null)?.status;
+  const nextStatus = parsed.data.status;
 
   // On status change, send notifications
-  if (body.status === "completed") {
+  if (nextStatus === "completed" && previousStatus !== "completed") {
     const order = data.order as { id: string; order_no: string; customer: string; created_by: string };
 
-    // Update order ready_quantity from cutting entries
+    // Update order ready_quantity from all order pieces of the order.
     const { data: entries } = await supabase
       .from("cutting_entries")
-      .select("cut_kg, is_order_piece")
-      .eq("cutting_plan_id", params.id)
+      .select("cut_kg")
+      .eq("order_id", order.id)
       .eq("is_order_piece", true);
 
-    const totalCutKg = (entries ?? []).reduce((s: number, e: { cut_kg: number }) => s + e.cut_kg, 0);
+    const totalCutKg = (entries ?? []).reduce((s: number, e: { cut_kg: number }) => s + Number(e.cut_kg || 0), 0);
     const { error: readyUpdateError } = await supabase
       .from("orders")
       .update({ ready_quantity: totalCutKg, status: "ready" })
@@ -104,7 +121,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     }
   }
 
-  if (body.status === "in_progress" && data.order) {
+  if (nextStatus === "in_progress" && previousStatus !== "in_progress" && data.order) {
     const order = data.order as { id: string; order_no: string; customer: string; created_by: string };
     await supabase.from("notifications").insert({
       user_id: order.created_by,
@@ -127,42 +144,22 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
 
   const supabase = createAdminClient();
 
-  // Get the plan before deleting to restore stock
+  // Get the plan before deleting to keep audit trail
   const { data: plan } = await supabase
     .from("cutting_plans")
     .select("source_stock_id, source_kg, target_kg, order_id")
     .eq("id", params.id)
     .single();
 
-  // Restore stock if source_stock_id exists
-  if (plan && plan.source_stock_id && plan.source_kg) {
-    const { data: sourceStock } = await supabase
-      .from("stock_items")
-      .select("kg, quantity")
-      .eq("id", plan.source_stock_id)
-      .single();
-
-    if (sourceStock) {
-      const restoreKg = Number(plan.source_kg);
-      const newKg = sourceStock.kg + restoreKg;
-      await supabase
-        .from("stock_items")
-        .update({ kg: newKg, quantity: newKg > 0 ? (sourceStock.quantity || 0) + 1 : 0 })
-        .eq("id", plan.source_stock_id);
-
-      // Log stock movement
-      await supabase.from("stock_movements").insert({
-        stock_item_id: plan.source_stock_id,
-        movement_type: "in",
-        kg: restoreKg,
-        quantity: 0,
-        reason: "cutting_plan_cancelled",
-        reference_type: "cutting_plan",
-        reference_id: params.id,
-        notes: `Kesim planı iptal - stok iade`,
-        created_by: auth.userId,
-      });
-    }
+  if (plan) {
+    await supabase.from("audit_logs").insert({
+      user_id: auth.userId,
+      action: "DELETE",
+      table_name: "cutting_plans",
+      record_id: params.id,
+      old_data: plan,
+      new_data: null,
+    });
   }
 
   const { error } = await supabase.from("cutting_plans").delete().eq("id", params.id);

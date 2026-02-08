@@ -7,13 +7,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { ProductionBobin, Order, CuttingPlan } from "@/lib/types";
+import { isProductionReadyStatus } from "@/lib/production-ready";
 import { toast } from "@/hooks/use-toast";
 import { CheckCircle, Clock, Package } from "lucide-react";
 
+type CuttingPlanWithMetrics = CuttingPlan & {
+  produced_bobins?: { kg: number; status: string }[];
+};
+
 export default function BobinEntryPage() {
-  const [role, setRole] = useState<string>("");
-  const [activePlans, setActivePlans] = useState<CuttingPlan[]>([]);
-  const [selectedPlan, setSelectedPlan] = useState<CuttingPlan | null>(null);
+  const [activePlans, setActivePlans] = useState<CuttingPlanWithMetrics[]>([]);
+  const [selectedPlan, setSelectedPlan] = useState<CuttingPlanWithMetrics | null>(null);
   const [todayBobins, setTodayBobins] = useState<ProductionBobin[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -27,20 +31,19 @@ export default function BobinEntryPage() {
   // Load cutting plans and today's bobins
   const loadData = useCallback(async () => {
     const supabase = createClient();
-    const { data: profile } = await supabase.from("profiles").select("role").eq("id", (await supabase.auth.getUser()).data.user?.id).single();
-    if (profile) setRole(profile.role);
 
     // Load active cutting plans
     const { data: plans } = await supabase
       .from("cutting_plans")
       .select(`
         *,
-        order:orders!inner(order_no, customer, product_type, micron, width, quantity, unit)
+        order:orders!inner(order_no, customer, product_type, micron, width, quantity, unit),
+        produced_bobins:production_bobins(kg, status)
       `)
       .in("status", ["planned", "in_progress"])
       .order("created_at", { ascending: false });
 
-    if (plans) setActivePlans(plans as CuttingPlan[]);
+    if (plans) setActivePlans(plans as CuttingPlanWithMetrics[]);
 
     // Load today's bobins
     const today = new Date().toISOString().split("T")[0];
@@ -116,6 +119,12 @@ export default function BobinEntryPage() {
     return Math.min(100, (totalReady / qty) * 100);
   }
 
+  function getPlanProducedKg(plan: CuttingPlanWithMetrics): number {
+    return (plan.produced_bobins ?? [])
+      .filter((b) => isProductionReadyStatus(b.status))
+      .reduce((sum, b) => sum + Number(b.kg || 0), 0);
+  }
+
   return (
     <div className="space-y-4 max-w-4xl mx-auto">
       {/* Header */}
@@ -133,7 +142,11 @@ export default function BobinEntryPage() {
           ) : (
             activePlans.map((plan) => {
               const order = plan.order as Order;
-              const readyPercent = getReadyPercent(order);
+              const orderReadyPercent = getReadyPercent(order);
+              const planProducedKg = getPlanProducedKg(plan);
+              const planTargetKg = Number(plan.target_kg || 0);
+              const planProgress = planTargetKg > 0 ? Math.min(100, (planProducedKg / planTargetKg) * 100) : 0;
+              const planRemaining = Math.max(0, planTargetKg - planProducedKg);
               const isSelected = selectedPlan?.id === plan.id;
 
               return (
@@ -154,12 +167,15 @@ export default function BobinEntryPage() {
                         {plan.source_product} {plan.source_micron}μ {plan.source_width}mm → {plan.target_width}mm
                       </p>
                       <p className="text-xs text-slate-500">
-                        Hedef: {plan.target_kg} kg | Kalan: {Number(plan.target_kg || 0) - (order.production_ready_kg || 0)} kg
+                        Plan: {planProducedKg.toFixed(1)} / {planTargetKg.toFixed(1)} kg | Kalan: {planRemaining.toFixed(1)} kg
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Sipariş Hazır: {orderReadyPercent.toFixed(0)}%
                       </p>
                     </div>
                   </div>
                   <div className="mt-2 h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                    <div className="bg-blue-500 h-full" style={{ width: `${readyPercent}%` }} />
+                    <div className="bg-blue-500 h-full" style={{ width: `${planProgress}%` }} />
                   </div>
                 </div>
               );
