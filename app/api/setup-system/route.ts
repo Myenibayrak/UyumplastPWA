@@ -31,6 +31,12 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'source_type') THEN
+    CREATE TYPE public.source_type AS ENUM ('stock','production','both');
+  END IF;
+END $$;
+
 -- 2) FUNCTIONS (before tables that reference them)
 
 -- touch_updated_at
@@ -303,6 +309,9 @@ CREATE TABLE IF NOT EXISTS public.orders (
   trim_width numeric,
   ready_bobbin numeric,
   ready_quantity numeric,
+  source_type public.source_type NOT NULL DEFAULT 'stock',
+  stock_ready_kg numeric DEFAULT 0,
+  production_ready_kg numeric DEFAULT 0,
   price numeric,
   payment_term text,
   currency text NOT NULL DEFAULT 'TRY',
@@ -311,6 +320,8 @@ CREATE TABLE IF NOT EXISTS public.orders (
   notes text,
   created_by uuid REFERENCES public.profiles(id),
   assigned_by uuid REFERENCES public.profiles(id),
+  closed_by uuid REFERENCES public.profiles(id),
+  closed_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -354,6 +365,115 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- stock_items
+CREATE TABLE IF NOT EXISTS public.stock_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  category text NOT NULL DEFAULT 'film',
+  product text NOT NULL,
+  micron numeric,
+  width numeric,
+  kg numeric NOT NULL DEFAULT 0,
+  quantity int NOT NULL DEFAULT 0,
+  lot_no text,
+  notes text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- cutting_plans
+CREATE TABLE IF NOT EXISTS public.cutting_plans (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id uuid NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
+  source_stock_id uuid REFERENCES public.stock_items(id) ON DELETE SET NULL,
+  source_product text NOT NULL,
+  source_micron numeric,
+  source_width numeric,
+  source_kg numeric,
+  target_width numeric,
+  target_kg numeric,
+  target_quantity int DEFAULT 1,
+  assigned_to uuid REFERENCES public.profiles(id),
+  planned_by uuid REFERENCES public.profiles(id),
+  status text NOT NULL DEFAULT 'planned',
+  priority public.priority_level NOT NULL DEFAULT 'normal',
+  due_date timestamptz,
+  notes text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- cutting_entries
+CREATE TABLE IF NOT EXISTS public.cutting_entries (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  cutting_plan_id uuid NOT NULL REFERENCES public.cutting_plans(id) ON DELETE CASCADE,
+  order_id uuid NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
+  source_stock_id uuid REFERENCES public.stock_items(id) ON DELETE SET NULL,
+  bobbin_label text NOT NULL,
+  cut_width numeric NOT NULL,
+  cut_kg numeric NOT NULL,
+  cut_quantity int DEFAULT 1,
+  is_order_piece boolean NOT NULL DEFAULT true,
+  entered_by uuid REFERENCES public.profiles(id),
+  machine_no text,
+  firma text,
+  cap text,
+  bant text,
+  piece_weight numeric,
+  notes text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- production_bobins (üretim çıktıları)
+CREATE TABLE IF NOT EXISTS public.production_bobins (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id uuid NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
+  cutting_plan_id uuid REFERENCES public.cutting_plans(id) ON DELETE SET NULL,
+  bobbin_no text NOT NULL,
+  meter numeric NOT NULL,
+  kg numeric NOT NULL,
+  fire_kg numeric DEFAULT 0,
+  product_type text NOT NULL,
+  micron numeric,
+  width numeric,
+  status text DEFAULT 'produced',
+  notes text,
+  entered_by uuid REFERENCES public.profiles(id),
+  entered_at timestamptz NOT NULL DEFAULT now(),
+  warehouse_in_at timestamptz,
+  warehouse_in_by uuid REFERENCES public.profiles(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- order_stock_entries (sipariş stok girişleri - depo kg girişi)
+CREATE TABLE IF NOT EXISTS public.order_stock_entries (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id uuid NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
+  bobbin_label text NOT NULL,
+  kg numeric NOT NULL,
+  notes text,
+  entered_by uuid REFERENCES public.profiles(id),
+  entered_at timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- stock_movements (stok hareketleri)
+CREATE TABLE IF NOT EXISTS public.stock_movements (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  stock_item_id uuid REFERENCES public.stock_items(id) ON DELETE SET NULL,
+  movement_type text NOT NULL,
+  kg numeric NOT NULL,
+  quantity numeric DEFAULT 0,
+  reason text NOT NULL,
+  reference_type text,
+  reference_id uuid,
+  notes text,
+  created_by uuid REFERENCES public.profiles(id),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- 4) INDEXES
 CREATE INDEX IF NOT EXISTS idx_profiles_role ON public.profiles(role);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON public.orders(status);
@@ -369,6 +489,21 @@ CREATE INDEX IF NOT EXISTS idx_notifications_read ON public.notifications(read);
 CREATE INDEX IF NOT EXISTS idx_definitions_category ON public.definitions(category);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON public.audit_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_table ON public.audit_logs(table_name);
+
+-- New indexes
+CREATE INDEX IF NOT EXISTS idx_stock_items_category ON public.stock_items(category);
+CREATE INDEX IF NOT EXISTS idx_stock_items_product ON public.stock_items(product);
+CREATE INDEX IF NOT EXISTS idx_cutting_plans_order_id ON public.cutting_plans(order_id);
+CREATE INDEX IF NOT EXISTS idx_cutting_plans_assigned_to ON public.cutting_plans(assigned_to);
+CREATE INDEX IF NOT EXISTS idx_cutting_plans_status ON public.cutting_plans(status);
+CREATE INDEX IF NOT EXISTS idx_cutting_entries_plan_id ON public.cutting_entries(cutting_plan_id);
+CREATE INDEX IF NOT EXISTS idx_cutting_entries_order_id ON public.cutting_entries(order_id);
+CREATE INDEX IF NOT EXISTS idx_production_bobins_order_id ON public.production_bobins(order_id);
+CREATE INDEX IF NOT EXISTS idx_production_bobins_plan_id ON public.production_bobins(cutting_plan_id);
+CREATE INDEX IF NOT EXISTS idx_production_bobins_status ON public.production_bobins(status);
+CREATE INDEX IF NOT EXISTS idx_order_stock_entries_order_id ON public.order_stock_entries(order_id);
+CREATE INDEX IF NOT EXISTS idx_stock_movements_stock_item_id ON public.stock_movements(stock_item_id);
+CREATE INDEX IF NOT EXISTS idx_stock_movements_reference ON public.stock_movements(reference_type, reference_id);
 
 -- 5) TRIGGERS (drop-if-exists + create for idempotency)
 
@@ -405,6 +540,83 @@ DROP TRIGGER IF EXISTS trg_task_notify_update ON public.order_tasks;
 CREATE TRIGGER trg_task_notify_update AFTER UPDATE ON public.order_tasks
   FOR EACH ROW EXECUTE FUNCTION public.notify_task_event();
 
+-- Production bobin ready update function
+CREATE OR REPLACE FUNCTION public.update_order_production_ready()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_order_id uuid;
+  v_total_kg numeric;
+BEGIN
+  IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND OLD.status IS DISTINCT FROM NEW.status AND NEW.status = 'produced') THEN
+    v_order_id := NEW.order_id;
+
+    SELECT COALESCE(SUM(kg), 0) INTO v_total_kg
+    FROM public.production_bobins
+    WHERE order_id = v_order_id AND status = 'produced';
+
+    UPDATE public.orders
+    SET production_ready_kg = v_total_kg
+    WHERE id = v_order_id;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Order stock entry ready update function
+CREATE OR REPLACE FUNCTION public.update_order_stock_ready()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_order_id uuid;
+  v_total_kg numeric;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    v_order_id := NEW.order_id;
+
+    SELECT COALESCE(SUM(kg), 0) INTO v_total_kg
+    FROM public.order_stock_entries
+    WHERE order_id = v_order_id;
+
+    UPDATE public.orders
+    SET stock_ready_kg = v_total_kg
+    WHERE id = v_order_id;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- New triggers for updated_at
+DROP TRIGGER IF EXISTS trg_stock_items_updated ON public.stock_items;
+CREATE TRIGGER trg_stock_items_updated BEFORE UPDATE ON public.stock_items
+  FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
+
+DROP TRIGGER IF EXISTS trg_cutting_plans_updated ON public.cutting_plans;
+CREATE TRIGGER trg_cutting_plans_updated BEFORE UPDATE ON public.cutting_plans
+  FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
+
+DROP TRIGGER IF EXISTS trg_cutting_entries_updated ON public.cutting_entries;
+CREATE TRIGGER trg_cutting_entries_updated BEFORE UPDATE ON public.cutting_entries
+  FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
+
+DROP TRIGGER IF EXISTS trg_production_bobins_updated ON public.production_bobins;
+CREATE TRIGGER trg_production_bobins_updated BEFORE UPDATE ON public.production_bobins
+  FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
+
+DROP TRIGGER IF EXISTS trg_order_stock_entries_updated ON public.order_stock_entries;
+CREATE TRIGGER trg_order_stock_entries_updated BEFORE UPDATE ON public.order_stock_entries
+  FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
+
+-- Production bobin ready trigger
+DROP TRIGGER IF EXISTS trg_production_bobin_ready ON public.production_bobins;
+CREATE TRIGGER trg_production_bobin_ready AFTER INSERT OR UPDATE ON public.production_bobins
+  FOR EACH ROW EXECUTE FUNCTION public.update_order_production_ready();
+
+-- Order stock entry ready trigger
+DROP TRIGGER IF EXISTS trg_order_stock_entry_ready ON public.order_stock_entries;
+CREATE TRIGGER trg_order_stock_entry_ready AFTER INSERT ON public.order_stock_entries
+  FOR EACH ROW EXECUTE FUNCTION public.update_order_stock_ready();
+
 -- 6) RLS
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
@@ -420,6 +632,12 @@ ALTER TABLE public.workflow_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notification_templates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ui_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.feature_flags ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.stock_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cutting_plans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cutting_entries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.production_bobins ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.order_stock_entries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.stock_movements ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies for idempotency
 DO $$ DECLARE
@@ -441,7 +659,7 @@ CREATE POLICY oms_profiles_update ON public.profiles FOR UPDATE TO authenticated
 -- orders policies
 CREATE POLICY oms_orders_select ON public.orders FOR SELECT TO authenticated
   USING (
-    public.has_any_role(ARRAY['admin','sales','accounting']::public.app_role[])
+    public.has_any_role(ARRAY['admin','sales','accounting','warehouse','shipping']::public.app_role[])
     OR id IN (SELECT order_id FROM public.order_tasks WHERE assigned_to = auth.uid() OR department = (SELECT role FROM public.profiles WHERE id = auth.uid()))
   );
 CREATE POLICY oms_orders_insert ON public.orders FOR INSERT TO authenticated
@@ -514,6 +732,49 @@ CREATE POLICY oms_ui_settings_manage ON public.ui_settings FOR ALL TO authentica
 CREATE POLICY oms_feature_flags_select ON public.feature_flags FOR SELECT TO authenticated USING (true);
 CREATE POLICY oms_feature_flags_manage ON public.feature_flags FOR ALL TO authenticated
   USING (public.has_any_role(ARRAY['admin']::public.app_role[]));
+
+-- stock_items policies
+CREATE POLICY oms_stock_items_select ON public.stock_items FOR SELECT TO authenticated USING (true);
+CREATE POLICY oms_stock_items_insert ON public.stock_items FOR INSERT TO authenticated
+  WITH CHECK (public.has_any_role(ARRAY['admin','warehouse']::public.app_role[]));
+CREATE POLICY oms_stock_items_update ON public.stock_items FOR UPDATE TO authenticated
+  USING (public.has_any_role(ARRAY['admin','warehouse']::public.app_role[]));
+CREATE POLICY oms_stock_items_delete ON public.stock_items FOR DELETE TO authenticated
+  USING (public.has_any_role(ARRAY['admin']::public.app_role[]));
+
+-- cutting_plans policies
+CREATE POLICY oms_cutting_plans_select ON public.cutting_plans FOR SELECT TO authenticated USING (true);
+CREATE POLICY oms_cutting_plans_insert ON public.cutting_plans FOR INSERT TO authenticated
+  WITH CHECK (public.has_any_role(ARRAY['admin','production']::public.app_role[]));
+CREATE POLICY oms_cutting_plans_update ON public.cutting_plans FOR UPDATE TO authenticated
+  USING (public.has_any_role(ARRAY['admin','production']::public.app_role[]));
+CREATE POLICY oms_cutting_plans_delete ON public.cutting_plans FOR DELETE TO authenticated
+  USING (public.has_any_role(ARRAY['admin','production']::public.app_role[]));
+
+-- cutting_entries policies
+CREATE POLICY oms_cutting_entries_select ON public.cutting_entries FOR SELECT TO authenticated USING (true);
+CREATE POLICY oms_cutting_entries_insert ON public.cutting_entries FOR INSERT TO authenticated
+  WITH CHECK (public.has_any_role(ARRAY['admin','production']::public.app_role[]));
+CREATE POLICY oms_cutting_entries_update ON public.cutting_entries FOR UPDATE TO authenticated
+  USING (public.has_any_role(ARRAY['admin','production']::public.app_role[]));
+
+-- production_bobins policies
+CREATE POLICY oms_production_bobins_select ON public.production_bobins FOR SELECT TO authenticated USING (true);
+CREATE POLICY oms_production_bobins_insert ON public.production_bobins FOR INSERT TO authenticated
+  WITH CHECK (public.has_any_role(ARRAY['admin','production']::public.app_role[]));
+CREATE POLICY oms_production_bobins_update ON public.production_bobins FOR UPDATE TO authenticated
+  USING (public.has_any_role(ARRAY['admin','production','warehouse']::public.app_role[]));
+
+-- order_stock_entries policies
+CREATE POLICY oms_order_stock_entries_select ON public.order_stock_entries FOR SELECT TO authenticated USING (true);
+CREATE POLICY oms_order_stock_entries_insert ON public.order_stock_entries FOR INSERT TO authenticated
+  WITH CHECK (public.has_any_role(ARRAY['admin','warehouse']::public.app_role[]));
+CREATE POLICY oms_order_stock_entries_delete ON public.order_stock_entries FOR DELETE TO authenticated
+  USING (public.has_any_role(ARRAY['admin','warehouse']::public.app_role[]));
+
+-- stock_movements policies
+CREATE POLICY oms_stock_movements_select ON public.stock_movements FOR SELECT TO authenticated USING (true);
+CREATE POLICY oms_stock_movements_insert ON public.stock_movements FOR INSERT TO authenticated WITH CHECK (true);
 
 -- 7) GRANTS
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;

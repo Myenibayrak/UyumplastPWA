@@ -328,3 +328,63 @@ export interface StockMovement {
   created_by: string;
   created_at: string;
 }
+
+export type SourceType = "stock" | "production" | "both";
+
+export const SOURCE_TYPE_LABELS: Record<SourceType, string> = {
+  stock: "Stok",
+  production: "Üretim",
+  both: "Stok + Üretim",
+};
+
+export const SOURCE_TYPE_ICONS: Record<SourceType, string> = {
+  stock: "📦",
+  production: "🏭",
+  both: "📦+🏭",
+};
+
+export type ProductionBobinStatus = "produced" | "warehouse" | "ready";
+
+export const PRODUCTION_BOBIN_STATUS_LABELS: Record<ProductionBobinStatus, string> = {
+  produced: "Üretildi",
+  warehouse: "Depoda",
+  ready: "Hazır",
+};
+
+export interface ProductionBobin {
+  id: string;
+  order_id: string;
+  cutting_plan_id: string | null;
+  bobbin_no: string;
+  meter: number;
+  kg: number;
+  fire_kg: number;
+  product_type: string;
+  micron: number | null;
+  width: number | null;
+  status: ProductionBobinStatus;
+  notes: string | null;
+  entered_by: string;
+  entered_at: string;
+  warehouse_in_at: string | null;
+  warehouse_in_by: string | null;
+  created_at: string;
+  updated_at: string;
+  order?: Order;
+  cutting_plan?: CuttingPlan;
+  entered_by_profile?: Profile;
+  warehouse_in_by_profile?: Profile;
+}
+
+export interface OrderStockEntry {
+  id: string;
+  order_id: string;
+  bobbin_label: string;
+  kg: number;
+  notes: string | null;
+  entered_by: string;
+  entered_at: string;
+  created_at: string;
+  updated_at: string;
+  entered_by_profile?: Profile;
+}

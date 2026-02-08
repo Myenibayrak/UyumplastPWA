@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,9 +28,7 @@ export function SettingsPanel() {
   const [workflows, setWorkflows] = useState<WorkflowSetting[]>([]);
   const [newDef, setNewDef] = useState({ category: "", label: "", value: "" });
 
-  useEffect(() => { loadAll(); }, []);
-
-  async function loadAll() {
+  const loadAll = useCallback(async () => {
     const supabase = createClient();
     const [s, d, p, f, fl, t, w] = await Promise.all([
       supabase.from("system_settings").select("*").order("key"),
@@ -48,7 +46,9 @@ export function SettingsPanel() {
     if (fl.data) setFlags(fl.data as FeatureFlag[]);
     if (t.data) setTemplates(t.data as NotifTemplate[]);
     if (w.data) setWorkflows(w.data as WorkflowSetting[]);
-  }
+  }, []);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
 
   async function saveSetting(key: string, value: string) {
     const supabase = createClient();

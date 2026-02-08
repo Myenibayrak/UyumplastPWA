@@ -9,9 +9,10 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { AppRole } from "@/lib/types";
 import { ROLE_LABELS } from "@/lib/types";
-import { isWorkerRole, canEditSettings } from "@/lib/rbac";
 import {
-  Package, ClipboardList, Settings, LogOut, Menu, X, LayoutDashboard, Warehouse, Factory,
+  LogOut, Menu, X,
+  Package, ClipboardList, Settings, LayoutDashboard,
+  Scissors, Truck, Wrench,
 } from "lucide-react";
 
 interface NavItem {
@@ -20,6 +21,47 @@ interface NavItem {
   icon: React.ReactNode;
   roles?: AppRole[];
 }
+
+// Role bazlı menü tanımları
+const MENU_BY_ROLE: Record<AppRole, NavItem[]> = {
+  admin: [
+    { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
+    { href: "/dashboard/tasks", label: "Görevler", icon: <ClipboardList className="h-5 w-5" /> },
+    { href: "/dashboard/production", label: "Üretim Planları", icon: <LayoutDashboard className="h-5 w-5" /> },
+    { href: "/dashboard/cutting", label: "Kesim Planları", icon: <Scissors className="h-5 w-5" /> },
+    { href: "/dashboard/bobin-entry", label: "Bobin Girişi", icon: <Wrench className="h-5 w-5" /> },
+    { href: "/dashboard/warehouse-entry", label: "Depo Girişi", icon: <LayoutDashboard className="h-5 w-5" /> },
+    { href: "/dashboard/stock", label: "Stok", icon: <Package className="h-5 w-5" /> },
+    { href: "/dashboard/shipping", label: "Sevkiyat", icon: <Truck className="h-5 w-5" /> },
+    { href: "/dashboard/settings", label: "Ayarlar", icon: <Settings className="h-5 w-5" /> },
+  ],
+  sales: [
+    { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
+    { href: "/dashboard/tasks", label: "Görevler", icon: <ClipboardList className="h-5 w-5" /> },
+    { href: "/dashboard/production", label: "Üretim", icon: <LayoutDashboard className="h-5 w-5" /> },
+  ],
+  production: [
+    { href: "/dashboard/tasks", label: "Görevlerim", icon: <ClipboardList className="h-5 w-5" /> },
+    { href: "/dashboard/production", label: "Üretim Planları", icon: <LayoutDashboard className="h-5 w-5" /> },
+    { href: "/dashboard/cutting", label: "Kesim Planları", icon: <Scissors className="h-5 w-5" /> },
+    { href: "/dashboard/bobin-entry", label: "Bobin Girişi", icon: <Wrench className="h-5 w-5" /> },
+  ],
+  warehouse: [
+    { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
+    { href: "/dashboard/tasks", label: "Görevlerim", icon: <ClipboardList className="h-5 w-5" /> },
+    { href: "/dashboard/warehouse-entry", label: "Depo Girişi", icon: <LayoutDashboard className="h-5 w-5" /> },
+    { href: "/dashboard/stock", label: "Stok", icon: <Package className="h-5 w-5" /> },
+  ],
+  shipping: [
+    { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
+    { href: "/dashboard/tasks", label: "Görevlerim", icon: <ClipboardList className="h-5 w-5" /> },
+    { href: "/dashboard/shipping", label: "Sevkiyat", icon: <Truck className="h-5 w-5" /> },
+  ],
+  accounting: [
+    { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
+    { href: "/dashboard/accounting", label: "Muhasebe", icon: <LayoutDashboard className="h-5 w-5" /> },
+  ],
+};
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<AppRole | null>(null);
@@ -51,27 +93,15 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     router.refresh();
   }
 
-  const navItems: NavItem[] = [
-    { href: "/dashboard", label: "Panel", icon: <LayoutDashboard className="h-5 w-5" /> },
-    { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" />, roles: ["admin", "sales", "accounting"] },
-    { href: "/dashboard/stock", label: "Stok", icon: <Warehouse className="h-5 w-5" />, roles: ["admin", "sales", "warehouse", "production"] },
-    { href: "/dashboard/production", label: "Üretim", icon: <Factory className="h-5 w-5" />, roles: ["admin", "production"] },
-    { href: "/dashboard/tasks", label: "Görevler", icon: <ClipboardList className="h-5 w-5" /> },
-    { href: "/dashboard/settings", label: "Ayarlar", icon: <Settings className="h-5 w-5" />, roles: ["admin"] },
-  ];
-
-  const filteredNav = navItems.filter((item) => {
-    if (!item.roles) return true;
-    if (!role) return false;
-    return item.roles.includes(role);
-  });
+  // Role'a göre menü
+  const navItems: NavItem[] = role ? MENU_BY_ROLE[role] : [];
 
   if (!role) {
     return <div className="min-h-screen flex items-center justify-center"><p>Yükleniyor...</p></div>;
   }
 
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-screen flex bg-slate-50">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => setSidebarOpen(false)} />
@@ -79,28 +109,30 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
       {/* Sidebar */}
       <aside className={cn(
-        "fixed inset-y-0 left-0 z-50 w-64 bg-white border-r transform transition-transform lg:translate-x-0 lg:static lg:z-auto",
+        "fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 transform transition-transform lg:translate-x-0 lg:static lg:z-auto",
         sidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="flex flex-col h-full">
-          <div className="flex items-center justify-between p-4 border-b">
-            <h1 className="text-xl font-bold text-primary">Uyumplast OMS</h1>
+          {/* Logo */}
+          <div className="flex items-center justify-between p-4 border-b border-slate-200">
+            <h1 className="text-xl font-bold text-blue-600">Uyumplast</h1>
             <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setSidebarOpen(false)}>
               <X className="h-5 w-5" />
             </Button>
           </div>
 
-          <nav className="flex-1 p-4 space-y-1">
-            {filteredNav.map((item) => (
+          {/* Navigation */}
+          <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+            {navItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
                 onClick={() => setSidebarOpen(false)}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                  pathname === item.href
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                  pathname === item.href || pathname.startsWith(item.href + "/")
+                    ? "bg-blue-600 text-white"
+                    : "text-slate-600 hover:bg-slate-100"
                 )}
               >
                 {item.icon}
@@ -109,12 +141,13 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             ))}
           </nav>
 
-          <div className="p-4 border-t">
-            <div className="mb-2">
-              <p className="text-sm font-medium truncate">{fullName}</p>
-              <p className="text-xs text-muted-foreground">{role ? ROLE_LABELS[role] : ""}</p>
+          {/* User info */}
+          <div className="p-4 border-t border-slate-200 bg-slate-50">
+            <div className="mb-3">
+              <p className="text-sm font-medium text-slate-900 truncate">{fullName}</p>
+              <p className="text-xs text-slate-500">{ROLE_LABELS[role]}</p>
             </div>
-            <Button variant="ghost" size="sm" className="w-full justify-start" onClick={handleLogout}>
+            <Button variant="ghost" size="sm" className="w-full justify-start text-slate-600 hover:text-slate-900" onClick={handleLogout}>
               <LogOut className="h-4 w-4 mr-2" />
               Çıkış Yap
             </Button>
@@ -124,13 +157,16 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="sticky top-0 z-30 flex items-center justify-between h-14 px-4 border-b bg-white">
+        {/* Header */}
+        <header className="sticky top-0 z-30 flex items-center justify-between h-14 px-4 border-b border-slate-200 bg-white">
           <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setSidebarOpen(true)}>
             <Menu className="h-5 w-5" />
           </Button>
           <div className="flex-1" />
           <NotificationBell />
         </header>
+
+        {/* Page content */}
         <main className="flex-1 p-4 md:p-6 overflow-auto">
           {children}
         </main>

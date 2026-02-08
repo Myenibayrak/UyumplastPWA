@@ -171,11 +171,11 @@ export default function StockPage() {
     finally { setAddLoading(false); }
   }
 
-  async function handleDelete(id: string) {
+  const handleDelete = useCallback(async (id: string) => {
     const res = await fetch(`/api/stock/${id}`, { method: "DELETE" });
     if (res.ok) { toast({ title: "Silindi" }); loadStock(); }
     else toast({ title: "Hata", variant: "destructive" });
-  }
+  }, [loadStock]);
 
   const filteredKg = useMemo(() => filteredItems.reduce((s, i) => s + (i.kg || 0), 0), [filteredItems]);
   const filteredQty = useMemo(() => filteredItems.reduce((s, i) => s + (i.quantity || 0), 0), [filteredItems]);
@@ -266,7 +266,7 @@ export default function StockPage() {
     }
 
     return cols;
-  }, [canEdit, loadStock]);
+  }, [canEdit, loadStock, handleDelete]);
 
   const table = useReactTable({
     data: filteredItems,
