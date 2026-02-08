@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowUpDown, ChevronLeft, ChevronRight, Plus, Loader2, Trash2, Package } from "lucide-react";
+import { ArrowUpDown, ChevronLeft, ChevronRight, Plus, Loader2, Trash2, Package, FilterX } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { canManageOrders } from "@/lib/rbac";
 
@@ -95,7 +95,24 @@ export default function StockPage() {
   const [addLoading, setAddLoading] = useState(false);
   const [products, setProducts] = useState<string[]>([]);
 
+  const [fProduct, setFProduct] = useState("");
+  const [fMicronMin, setFMicronMin] = useState("");
+  const [fMicronMax, setFMicronMax] = useState("");
+  const [fWidthMin, setFWidthMin] = useState("");
+  const [fWidthMax, setFWidthMax] = useState("");
+
   const canEdit = role ? canManageOrders(role) || role === "warehouse" || role === "production" : false;
+
+  const hasActiveFilters = fProduct || fMicronMin || fMicronMax || fWidthMin || fWidthMax;
+
+  function clearFilters() {
+    setFProduct("");
+    setFMicronMin("");
+    setFMicronMax("");
+    setFWidthMin("");
+    setFWidthMax("");
+    setGlobalFilter("");
+  }
 
   const loadStock = useCallback(async () => {
     const res = await fetch(`/api/stock?category=${category}`);
@@ -117,6 +134,17 @@ export default function StockPage() {
   }, []);
 
   useEffect(() => { loadStock(); }, [loadStock]);
+
+  const filteredItems = useMemo(() => {
+    return items.filter((item) => {
+      if (fProduct && !item.product.toLowerCase().includes(fProduct.toLowerCase())) return false;
+      if (fMicronMin && (item.micron == null || item.micron < Number(fMicronMin))) return false;
+      if (fMicronMax && (item.micron == null || item.micron > Number(fMicronMax))) return false;
+      if (fWidthMin && (item.width == null || item.width < Number(fWidthMin))) return false;
+      if (fWidthMax && (item.width == null || item.width > Number(fWidthMax))) return false;
+      return true;
+    });
+  }, [items, fProduct, fMicronMin, fMicronMax, fWidthMin, fWidthMax]);
 
   async function handleAdd() {
     if (!newItem.product) return;
@@ -149,8 +177,8 @@ export default function StockPage() {
     else toast({ title: "Hata", variant: "destructive" });
   }
 
-  const totalKg = useMemo(() => items.reduce((s, i) => s + (i.kg || 0), 0), [items]);
-  const totalQty = useMemo(() => items.reduce((s, i) => s + (i.quantity || 0), 0), [items]);
+  const filteredKg = useMemo(() => filteredItems.reduce((s, i) => s + (i.kg || 0), 0), [filteredItems]);
+  const filteredQty = useMemo(() => filteredItems.reduce((s, i) => s + (i.quantity || 0), 0), [filteredItems]);
 
   const columns = useMemo<ColumnDef<StockItem>[]>(() => {
     const cols: ColumnDef<StockItem>[] = [
@@ -241,7 +269,7 @@ export default function StockPage() {
   }, [canEdit, loadStock]);
 
   const table = useReactTable({
-    data: items,
+    data: filteredItems,
     columns,
     state: { sorting, globalFilter },
     onSortingChange: setSorting,
@@ -266,34 +294,63 @@ export default function StockPage() {
         </Tabs>
       </div>
 
-      <div className="flex items-center gap-3 flex-wrap">
-        <Input
-          placeholder="Ara... (ürün, mikron, en)"
-          value={globalFilter}
-          onChange={(e) => setGlobalFilter(e.target.value)}
-          className="max-w-xs h-8 text-sm"
-        />
-        <div className="flex gap-3 text-xs text-muted-foreground">
-          <span>{table.getFilteredRowModel().rows.length} kayıt</span>
-          <span className="font-semibold text-blue-700">{totalKg.toLocaleString("tr-TR")} kg</span>
-          <span className="font-semibold text-green-700">{totalQty.toLocaleString("tr-TR")} adet</span>
-        </div>
-        <div className="flex-1" />
-        {products.length > 0 && (
-          <div className="flex gap-1 flex-wrap max-w-md">
-            {products.slice(0, 8).map((p) => (
-              <Button key={p} variant={globalFilter === p ? "default" : "outline"} size="sm" className="h-6 text-[10px] px-2"
-                onClick={() => setGlobalFilter(globalFilter === p ? "" : p)}
-              >{p}</Button>
-            ))}
-            {products.length > 8 && <span className="text-xs text-muted-foreground self-center">+{products.length - 8}</span>}
+      <div className="rounded-lg border bg-white shadow-sm p-3 space-y-3">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-2 items-end">
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-gray-500 uppercase">Ürün (içerir)</Label>
+            <Select value={fProduct || "__all__"} onValueChange={(v) => setFProduct(v === "__all__" ? "" : v)}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="Tümü" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">Tümü</SelectItem>
+                {products.map((p) => (
+                  <SelectItem key={p} value={p}>{p}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-        )}
-        {canEdit && (
-          <Button size="sm" className="h-8" onClick={() => setAddOpen(true)}>
-            <Plus className="h-3 w-3 mr-1" /> Ekle
-          </Button>
-        )}
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-gray-500 uppercase">Mikron ≥</Label>
+            <Input type="number" className="h-8 text-xs" placeholder="min" value={fMicronMin} onChange={(e) => setFMicronMin(e.target.value)} />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-gray-500 uppercase">Mikron ≤</Label>
+            <Input type="number" className="h-8 text-xs" placeholder="max" value={fMicronMax} onChange={(e) => setFMicronMax(e.target.value)} />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-gray-500 uppercase">En ≥</Label>
+            <Input type="number" className="h-8 text-xs" placeholder="min" value={fWidthMin} onChange={(e) => setFWidthMin(e.target.value)} />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-gray-500 uppercase">En ≤</Label>
+            <Input type="number" className="h-8 text-xs" placeholder="max" value={fWidthMax} onChange={(e) => setFWidthMax(e.target.value)} />
+          </div>
+
+          <div className="flex gap-1">
+            {hasActiveFilters && (
+              <Button variant="destructive" size="sm" className="h-8 text-xs" onClick={clearFilters}>
+                <FilterX className="h-3 w-3 mr-1" /> Temizle
+              </Button>
+            )}
+            {canEdit && (
+              <Button size="sm" className="h-8 text-xs" onClick={() => setAddOpen(true)}>
+                <Plus className="h-3 w-3 mr-1" /> Ekle
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 text-xs">
+          <span className="text-muted-foreground">{table.getFilteredRowModel().rows.length} kayıt</span>
+          <span className="font-bold text-lg text-red-600">{filteredKg.toLocaleString("tr-TR")} kg</span>
+          <span className="font-semibold text-green-700">{filteredQty.toLocaleString("tr-TR")} adet</span>
+          {hasActiveFilters && <span className="text-orange-600 font-medium">(filtreli)</span>}
+        </div>
       </div>
 
       <div className="rounded-lg border bg-white shadow-sm overflow-auto max-h-[calc(100vh-220px)]">
