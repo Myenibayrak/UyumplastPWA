@@ -5,8 +5,8 @@ import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel,
   getPaginationRowModel, flexRender, type ColumnDef, type SortingState,
 } from "@tanstack/react-table";
-import type { Order, OrderStatus, Priority } from "@/lib/types";
-import { ORDER_STATUS_LABELS, PRIORITY_LABELS } from "@/lib/types";
+import type { Order, OrderStatus, Priority, TaskSummary } from "@/lib/types";
+import { ORDER_STATUS_LABELS, PRIORITY_LABELS, ROLE_LABELS, TASK_STATUS_LABELS } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -262,16 +262,43 @@ export function OrderTable({ orders, showFinance, canEdit, onReload, onNewOrder,
       );
     }
 
+    cols.push({
+      id: "tasks",
+      header: "Görevler",
+      cell: ({ row }) => {
+        const tasks = row.original.task_summary || [];
+        if (tasks.length === 0) return <span className="text-muted-foreground text-[10px]">Atanmadı</span>;
+        return (
+          <div className="flex flex-wrap gap-0.5">
+            {tasks.map((t: TaskSummary, i: number) => {
+              const dept = ROLE_LABELS[t.department as keyof typeof ROLE_LABELS] || t.department;
+              const st = TASK_STATUS_LABELS[t.status as keyof typeof TASK_STATUS_LABELS] || t.status;
+              const bg = t.status === "done" ? "bg-green-100 text-green-800"
+                : t.status === "in_progress" ? "bg-blue-100 text-blue-800"
+                : t.status === "preparing" ? "bg-yellow-100 text-yellow-800"
+                : "bg-gray-100 text-gray-700";
+              return (
+                <span key={i} className={`inline-flex items-center text-[9px] px-1.5 py-0.5 rounded-full ${bg}`}>
+                  {dept}{t.assignee_name ? ` (${t.assignee_name})` : ""}: {st}
+                </span>
+              );
+            })}
+          </div>
+        );
+      },
+      size: 200,
+    });
+
     if (canEdit) {
       cols.push({
         id: "actions",
         header: "",
         cell: ({ row }) => (
           <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2" onClick={(e) => { e.stopPropagation(); onAssignTask(row.original); }}>
-            Görev Ata
+            + Görev
           </Button>
         ),
-        size: 80,
+        size: 70,
       });
     }
 

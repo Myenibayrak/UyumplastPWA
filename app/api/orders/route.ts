@@ -11,14 +11,23 @@ export async function GET() {
   const supabase = createServerSupabase();
   const { data, error } = await supabase
     .from("orders")
-    .select("*")
+    .select("*, order_tasks(id, department, status, assigned_to, assignee:profiles(full_name))")
     .order("created_at", { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const orders = canViewFinance(auth.role)
-    ? data
-    : (data ?? []).map((o) => stripFinanceFields(o));
+  const orders = (data ?? []).map((o) => {
+    const base = canViewFinance(auth.role) ? o : stripFinanceFields(o);
+    const tasks = (o.order_tasks || []) as { department: string; status: string; assignee: { full_name: string } | null }[];
+    return {
+      ...base,
+      task_summary: tasks.map((t) => ({
+        department: t.department,
+        status: t.status,
+        assignee_name: t.assignee?.full_name || null,
+      })),
+    };
+  });
 
   return NextResponse.json(orders);
 }

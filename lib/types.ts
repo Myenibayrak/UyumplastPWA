@@ -58,8 +58,15 @@ export interface Profile {
   id: string;
   full_name: string;
   role: AppRole;
+  active?: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface TaskSummary {
+  department: string;
+  status: string;
+  assignee_name: string | null;
 }
 
 export interface Order {
@@ -85,6 +92,7 @@ export interface Order {
   assigned_by: string | null;
   created_at: string;
   updated_at: string;
+  task_summary?: TaskSummary[];
 }
 
 export interface OrderTask {

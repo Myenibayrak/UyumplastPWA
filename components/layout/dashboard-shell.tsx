@@ -55,7 +55,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     { href: "/dashboard", label: "Panel", icon: <LayoutDashboard className="h-5 w-5" /> },
     { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" />, roles: ["admin", "sales", "accounting"] },
     { href: "/dashboard/stock", label: "Stok", icon: <Warehouse className="h-5 w-5" />, roles: ["admin", "sales", "warehouse", "production"] },
-    { href: "/dashboard/tasks", label: "Görevlerim", icon: <ClipboardList className="h-5 w-5" /> },
+    { href: "/dashboard/tasks", label: "Görevler", icon: <ClipboardList className="h-5 w-5" /> },
     { href: "/dashboard/settings", label: "Ayarlar", icon: <Settings className="h-5 w-5" />, roles: ["admin"] },
   ];
 
