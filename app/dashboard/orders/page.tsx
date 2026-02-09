@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import type { Order, AppRole, Profile } from "@/lib/types";
-import { canCloseOrders, canManageOrders, canSendOrderNudge, canViewFinance, canViewOrderHistory, isWorkerRole, resolveRoleByIdentity } from "@/lib/rbac";
+import { canCloseOrders, canEditOrderDetails, canManageOrders, canSendOrderNudge, canViewFinance, canViewOrderHistory, isWorkerRole, resolveRoleByIdentity } from "@/lib/rbac";
 import { ORDER_STATUS_LABELS, SOURCE_TYPE_ICONS } from "@/lib/types";
 import { toast } from "@/hooks/use-toast";
 import { Plus, Search } from "lucide-react";
@@ -74,6 +74,7 @@ export default function OrdersPage() {
 
   const canClose = canCloseOrders(role);
   const isManager = role ? canManageOrders(role) : false;
+  const canEditDetails = canEditOrderDetails(role);
   const canNudge = role ? canSendOrderNudge(role, userName) : false;
   const isWorker = role ? isWorkerRole(role) : false;
   const showFinance = role ? canViewFinance(role) : false;
@@ -237,11 +238,24 @@ export default function OrdersPage() {
   }
 
   function renderOrderActions(order: Order, mobile = false) {
-    if ((!(isManager || canClose || canNudge)) || activeTab !== "active") return null;
+    if ((!(isManager || canClose || canNudge || canEditDetails)) || activeTab !== "active") return null;
     const btnClass = mobile ? "h-8 text-xs flex-1" : "h-7 text-xs";
 
     return (
       <div className={`flex ${mobile ? "w-full" : ""} gap-1`}>
+        {canEditDetails && (
+          <Button
+            variant="outline"
+            size="sm"
+            className={btnClass}
+            onClick={() => {
+              setEditOrder(order);
+              setFormOpen(true);
+            }}
+          >
+            Düzenle
+          </Button>
+        )}
         {isManager && (
           <Button
             variant="outline"

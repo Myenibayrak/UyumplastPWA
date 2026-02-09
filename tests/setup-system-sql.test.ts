@@ -15,9 +15,4 @@ describe("Setup SQL messaging schema", () => {
     expect(file).toContain("ALTER PUBLICATION supabase_realtime ADD TABLE public.task_messages");
   });
 
-  it("includes handover notes schema and realtime publication", () => {
-    expect(file).toContain("CREATE TABLE IF NOT EXISTS public.handover_notes");
-    expect(file).toContain("CREATE POLICY oms_handover_select ON public.handover_notes");
-    expect(file).toContain("ALTER PUBLICATION supabase_realtime ADD TABLE public.handover_notes");
-  });
 });

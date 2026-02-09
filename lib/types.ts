@@ -56,13 +56,6 @@ export const PRIORITY_LABELS: Record<Priority, string> = {
   urgent: "Acil",
 };
 
-export type HandoverStatus = "open" | "resolved";
-
-export const HANDOVER_STATUS_LABELS: Record<HandoverStatus, string> = {
-  open: "Açık",
-  resolved: "Çözüldü",
-};
-
 export interface Profile {
   id: string;
   full_name: string;
@@ -184,24 +177,6 @@ export interface TaskMessage {
   created_at: string;
   updated_at: string;
   sender?: Pick<Profile, "id" | "full_name" | "role"> | null;
-}
-
-export interface HandoverNote {
-  id: string;
-  department: AppRole;
-  shift_date: string;
-  title: string;
-  details: string;
-  priority: Priority;
-  status: HandoverStatus;
-  created_by: string;
-  resolved_by: string | null;
-  resolved_at: string | null;
-  resolved_note: string | null;
-  created_at: string;
-  updated_at: string;
-  creator?: Pick<Profile, "id" | "full_name" | "role"> | null;
-  resolver?: Pick<Profile, "id" | "full_name" | "role"> | null;
 }
 
 export interface Definition {

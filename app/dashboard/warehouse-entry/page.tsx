@@ -231,7 +231,11 @@ export default function WarehouseEntryPage() {
                       </span>
                       <span className="font-mono text-sm font-semibold text-blue-600">{order.order_no}</span>
                       <span className="text-sm">{order.customer}</span>
-                      <span className="text-xs text-slate-500">{order.product_type}</span>
+                      <span className="text-xs text-slate-500">
+                        {order.product_type}
+                        {order.micron != null ? ` • ${order.micron}µ` : ""}
+                        {order.width != null ? ` • ${order.width}mm` : ""}
+                      </span>
                     </div>
                     <div className="text-right">
                       <p className="text-xs text-slate-500">
@@ -267,6 +271,9 @@ export default function WarehouseEntryPage() {
               <h2 className="text-lg font-bold">{selectedOrder.order_no}</h2>
               <p className="text-sm text-slate-600">
                 {selectedOrder.customer} - {selectedOrder.product_type}
+                {selectedOrder.micron != null ? ` • ${selectedOrder.micron}µ` : ""}
+                {selectedOrder.width != null ? ` • ${selectedOrder.width}mm` : ""}
+                {selectedOrder.quantity != null ? ` • ${selectedOrder.quantity} ${selectedOrder.unit}` : ""}
               </p>
             </div>
             <Button onClick={() => setEntryDialogOpen(true)} size="sm">
@@ -369,6 +376,16 @@ export default function WarehouseEntryPage() {
                 <div>
                   <p className="text-slate-500">Ürün</p>
                   <p className="font-medium">{selectedOrder?.product_type}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Mikron / En</p>
+                  <p className="font-medium">
+                    {selectedOrder?.micron != null ? `${selectedOrder.micron}µ` : "—"} / {selectedOrder?.width != null ? `${selectedOrder.width}mm` : "—"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Sipariş Miktarı</p>
+                  <p className="font-medium">{selectedOrder?.quantity ?? 0} {selectedOrder?.unit || "kg"}</p>
                 </div>
                 <div>
                   <p className="text-slate-500">Mevcut Hazır (Toplam)</p>

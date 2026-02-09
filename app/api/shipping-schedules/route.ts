@@ -8,6 +8,12 @@ function getTodayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function getTomorrowIsoDate() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
 function diffDays(fromDate: string, toDate: string): number {
   const from = new Date(`${fromDate}T00:00:00.000Z`);
   const to = new Date(`${toDate}T00:00:00.000Z`);
@@ -17,6 +23,7 @@ function diffDays(fromDate: string, toDate: string): number {
 
 async function autoCarryOverSchedules(supabase: ReturnType<typeof createAdminClient>) {
   const today = getTodayIsoDate();
+  const tomorrow = getTomorrowIsoDate();
   const { data: overdueRows, error } = await supabase
     .from("shipping_schedules")
     .select("id, scheduled_date, carry_count")
@@ -30,7 +37,7 @@ async function autoCarryOverSchedules(supabase: ReturnType<typeof createAdminCli
     await supabase
       .from("shipping_schedules")
       .update({
-        scheduled_date: today,
+        scheduled_date: tomorrow,
         carry_count: Number(row.carry_count || 0) + Math.max(1, missed),
       })
       .eq("id", row.id);

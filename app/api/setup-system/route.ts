@@ -384,23 +384,6 @@ CREATE TABLE IF NOT EXISTS public.task_messages (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
--- handover_notes (vardiya devir-teslim notlari)
-CREATE TABLE IF NOT EXISTS public.handover_notes (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  department public.app_role NOT NULL,
-  shift_date date NOT NULL DEFAULT CURRENT_DATE,
-  title text NOT NULL DEFAULT '',
-  details text NOT NULL DEFAULT '',
-  priority public.priority_level NOT NULL DEFAULT 'normal',
-  status text NOT NULL DEFAULT 'open',
-  created_by uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  resolved_by uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
-  resolved_at timestamptz,
-  resolved_note text,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
 -- notifications
 CREATE TABLE IF NOT EXISTS public.notifications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -568,10 +551,6 @@ CREATE INDEX IF NOT EXISTS idx_direct_messages_created_at ON public.direct_messa
 CREATE INDEX IF NOT EXISTS idx_task_messages_task_id ON public.task_messages(task_id);
 CREATE INDEX IF NOT EXISTS idx_task_messages_sender_id ON public.task_messages(sender_id);
 CREATE INDEX IF NOT EXISTS idx_task_messages_parent_id ON public.task_messages(parent_id);
-CREATE INDEX IF NOT EXISTS idx_handover_department ON public.handover_notes(department);
-CREATE INDEX IF NOT EXISTS idx_handover_shift_date ON public.handover_notes(shift_date DESC);
-CREATE INDEX IF NOT EXISTS idx_handover_status ON public.handover_notes(status);
-CREATE INDEX IF NOT EXISTS idx_handover_created_by ON public.handover_notes(created_by);
 CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON public.notifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_read ON public.notifications(read);
 CREATE INDEX IF NOT EXISTS idx_definitions_category ON public.definitions(category);
@@ -617,10 +596,6 @@ CREATE TRIGGER trg_direct_messages_updated BEFORE UPDATE ON public.direct_messag
 
 DROP TRIGGER IF EXISTS trg_task_messages_updated ON public.task_messages;
 CREATE TRIGGER trg_task_messages_updated BEFORE UPDATE ON public.task_messages
-  FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
-
-DROP TRIGGER IF EXISTS trg_handover_notes_updated ON public.handover_notes;
-CREATE TRIGGER trg_handover_notes_updated BEFORE UPDATE ON public.handover_notes
   FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
 
 -- order number generator
@@ -760,7 +735,6 @@ ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.order_tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.direct_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.task_messages ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.handover_notes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.definitions ENABLE ROW LEVEL SECURITY;
@@ -885,30 +859,6 @@ CREATE POLICY oms_task_messages_delete ON public.task_messages FOR DELETE TO aut
     sender_id = auth.uid()
     OR public.has_any_role(ARRAY['admin','sales','accounting']::public.app_role[])
   );
-
--- handover_notes policies
-CREATE POLICY oms_handover_select ON public.handover_notes FOR SELECT TO authenticated
-  USING (
-    public.has_any_role(ARRAY['admin','sales','accounting']::public.app_role[])
-    OR department = (SELECT role FROM public.profiles WHERE id = auth.uid())
-    OR created_by = auth.uid()
-    OR resolved_by = auth.uid()
-  );
-CREATE POLICY oms_handover_insert ON public.handover_notes FOR INSERT TO authenticated
-  WITH CHECK (
-    created_by = auth.uid()
-    AND (
-      public.has_any_role(ARRAY['admin','sales','accounting']::public.app_role[])
-      OR department = (SELECT role FROM public.profiles WHERE id = auth.uid())
-    )
-  );
-CREATE POLICY oms_handover_update ON public.handover_notes FOR UPDATE TO authenticated
-  USING (
-    public.has_any_role(ARRAY['admin','sales','accounting']::public.app_role[])
-    OR created_by = auth.uid()
-  );
-CREATE POLICY oms_handover_delete ON public.handover_notes FOR DELETE TO authenticated
-  USING (public.has_any_role(ARRAY['admin']::public.app_role[]));
 
 -- notifications policies
 CREATE POLICY oms_notif_select ON public.notifications FOR SELECT TO authenticated
@@ -1150,18 +1100,6 @@ BEGIN
     WHERE pubname = 'supabase_realtime' AND tablename = 'task_messages'
   ) THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.task_messages;
-  END IF;
-EXCEPTION WHEN undefined_object THEN
-  NULL;
-END $$;
-
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime' AND tablename = 'handover_notes'
-  ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.handover_notes;
   END IF;
 EXCEPTION WHEN undefined_object THEN
   NULL;

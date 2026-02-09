@@ -4,6 +4,7 @@ import {
   isFinanceRole,
   canViewFinance,
   canManageOrders,
+  canEditOrderDetails,
   canAssignTasks,
   canViewAllOrders,
   canEditSettings,
@@ -73,6 +74,19 @@ describe("RBAC helpers", () => {
     });
   });
 
+  describe("canEditOrderDetails", () => {
+    it("admin, sales and accounting can edit order detail fields", () => {
+      expect(canEditOrderDetails("admin")).toBe(true);
+      expect(canEditOrderDetails("sales")).toBe(true);
+      expect(canEditOrderDetails("accounting")).toBe(true);
+    });
+    it("worker roles cannot edit order detail fields", () => {
+      expect(canEditOrderDetails("warehouse")).toBe(false);
+      expect(canEditOrderDetails("production")).toBe(false);
+      expect(canEditOrderDetails("shipping")).toBe(false);
+    });
+  });
+
   describe("canAssignTasks", () => {
     it("admin and sales can assign tasks", () => {
       expect(canAssignTasks("admin")).toBe(true);
@@ -139,7 +153,7 @@ describe("RBAC helpers", () => {
     it("production plan management permission", () => {
       expect(canManageProductionPlans("admin")).toBe(true);
       expect(canManageProductionPlans("production")).toBe(true);
-      expect(canManageProductionPlans("sales")).toBe(false);
+      expect(canManageProductionPlans("sales")).toBe(true);
     });
 
     it("history and audit visibility", () => {

@@ -35,7 +35,7 @@ export default function ProductionPage() {
   });
   const hasStockAccess = canViewStock(role, fullName);
   const canManagePlanStatus = canManageProductionPlans(role);
-  const canCreatePlan = canManagePlanStatus && hasStockAccess;
+  const canCreatePlan = canManagePlanStatus;
 
   const loadPlans = useCallback(async () => {
     const res = await fetch("/api/cutting-plans", { cache: "no-store" });
@@ -72,7 +72,7 @@ export default function ProductionPage() {
       return;
     }
 
-    // Load orders and stock
+    // Load orders first
     const orderRes = await fetch("/api/orders", { cache: "no-store" });
     if (orderRes.ok) {
       const all: Order[] = await orderRes.json();
@@ -85,36 +85,45 @@ export default function ProductionPage() {
       );
     }
 
-    const stockRes = await fetch("/api/stock?category=film", { cache: "no-store" });
-    if (stockRes.ok) {
-      setStockItems(await stockRes.json());
+    // Stock list is optional for planning. If unavailable, plan can still be created from order details.
+    if (hasStockAccess) {
+      const stockRes = await fetch("/api/stock?category=film", { cache: "no-store" });
+      if (stockRes.ok) {
+        setStockItems(await stockRes.json());
+      } else {
+        setStockItems([]);
+        toast({ title: "Stok listesi alınamadı, stoksuz plan oluşturabilirsiniz.", variant: "destructive" });
+      }
     } else {
-      toast({ title: "Stok listesi yüklenemedi", variant: "destructive" });
-      return;
+      setStockItems([]);
     }
 
     setPlanOpen(true);
   }
 
   async function handleCreatePlan() {
-    if (!planForm.order_id || !planForm.source_stock_id) {
-      toast({ title: "Lütfen sipariş ve kaynak bobin seçin", variant: "destructive" });
+    if (!planForm.order_id) {
+      toast({ title: "Lütfen sipariş seçin", variant: "destructive" });
       return;
     }
 
     setPlanLoading(true);
     try {
+      const selectedOrder = orders.find((o) => o.id === planForm.order_id);
+      if (!selectedOrder) {
+        throw new Error("Sipariş bilgisi bulunamadı");
+      }
       const stock = stockItems.find((s) => s.id === planForm.source_stock_id);
       const res = await fetch("/api/cutting-plans", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           order_id: planForm.order_id,
-          source_stock_id: planForm.source_stock_id,
-          source_product: stock?.product || "",
-          source_micron: stock?.micron,
-          source_width: stock?.width,
-          source_kg: stock?.kg,
+          source_stock_id: planForm.source_stock_id || null,
+          source_product: stock?.product || selectedOrder.product_type || "Üretim Kaynağı",
+          source_micron: stock?.micron ?? selectedOrder.micron ?? null,
+          source_width: stock?.width ?? selectedOrder.width ?? null,
+          source_kg: stock?.kg ?? selectedOrder.quantity ?? null,
           target_width: planForm.target_width ? Number(planForm.target_width) : null,
           target_kg: planForm.target_kg ? Number(planForm.target_kg) : null,
           assigned_to: planForm.assigned_to || null,
@@ -156,6 +165,7 @@ export default function ProductionPage() {
   }
 
   const selectedStock = stockItems.find((s) => s.id === planForm.source_stock_id);
+  const selectedOrder = orders.find((o) => o.id === planForm.order_id);
 
   return (
     <div className="space-y-4 max-w-6xl mx-auto">
@@ -297,10 +307,11 @@ export default function ProductionPage() {
 
             {/* Source Stock Selection */}
             <div>
-              <Label>Kaynak Bobin *</Label>
-              <Select value={planForm.source_stock_id} onValueChange={(v) => setPlanForm((p) => ({ ...p, source_stock_id: v }))}>
+              <Label>Kaynak Bobin (opsiyonel)</Label>
+              <Select value={planForm.source_stock_id || "__none__"} onValueChange={(v) => setPlanForm((p) => ({ ...p, source_stock_id: v === "__none__" ? "" : v }))}>
                 <SelectTrigger><SelectValue placeholder="Stok kartı seçin" /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="__none__">Stoksuz / Siparişten Planla</SelectItem>
                   {stockItems.filter((s) => s.kg > 0).map((s) => (
                     <SelectItem key={s.id} value={s.id}>
                       {s.product} {s.micron}µ {s.width}mm — {s.kg} kg
@@ -311,6 +322,16 @@ export default function ProductionPage() {
               {selectedStock && (
                 <p className="text-xs text-slate-500 mt-1">
                   {selectedStock.product} {selectedStock.micron}µ {selectedStock.width}mm — {selectedStock.kg} kg
+                </p>
+              )}
+              {!selectedStock && selectedOrder && (
+                <p className="text-xs text-slate-500 mt-1">
+                  Siparişten kaynak: {selectedOrder.product_type} {selectedOrder.micron ?? "—"}µ {selectedOrder.width ?? "—"}mm
+                </p>
+              )}
+              {!hasStockAccess && (
+                <p className="text-xs text-amber-700 mt-1">
+                  Bu kullanıcı stok listesini görmeden plan oluşturur; kaynak bilgisi siparişten alınır.
                 </p>
               )}
             </div>

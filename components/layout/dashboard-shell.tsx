@@ -7,13 +7,13 @@ import { createClient } from "@/lib/supabase/client";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { canCreateStock, canViewAuditTrail, canViewHandover, canViewShippingSchedule, canViewStock, resolveRoleByIdentity } from "@/lib/rbac";
+import { canCreateStock, canViewAuditTrail, canViewShippingSchedule, canViewStock, resolveRoleByIdentity } from "@/lib/rbac";
 import type { AppRole } from "@/lib/types";
 import { ROLE_LABELS } from "@/lib/types";
 import {
   LogOut, Menu, X,
   Package, ClipboardList, Settings, LayoutDashboard,
-  Wrench, Warehouse, Factory, ShieldCheck, Truck, Workflow, MessageSquareMore, Database, ClipboardCheck,
+  Wrench, Warehouse, Factory, ShieldCheck, Truck, Workflow, MessageSquareMore, Database,
 } from "lucide-react";
 
 interface NavItem {
@@ -31,7 +31,6 @@ const MOBILE_LABELS: Record<string, string> = {
   "/dashboard/stock": "Stok",
   "/dashboard/shipping-plan": "Sevkiyat",
   "/dashboard/data-entry": "Veri",
-  "/dashboard/handover": "Devir",
 };
 
 // Role bazlı menü tanımları
@@ -42,7 +41,6 @@ const MENU_BY_ROLE: Record<AppRole, NavItem[]> = {
     { href: "/dashboard/tasks", label: "Görevler", icon: <ClipboardList className="h-5 w-5" /> },
     { href: "/dashboard/messages", label: "Mesajlar", icon: <MessageSquareMore className="h-5 w-5" /> },
     { href: "/dashboard/workflow", label: "İş Akışı", icon: <Workflow className="h-5 w-5" /> },
-    { href: "/dashboard/handover", label: "Devir-Teslim", icon: <ClipboardCheck className="h-5 w-5" /> },
     { href: "/dashboard/shipping-plan", label: "Sevkiyat Programı", icon: <Truck className="h-5 w-5" /> },
     { href: "/dashboard/production", label: "Üretim Planları", icon: <LayoutDashboard className="h-5 w-5" /> },
     { href: "/dashboard/bobin-entry", label: "Bobin Girişi", icon: <Wrench className="h-5 w-5" /> },
@@ -58,7 +56,6 @@ const MENU_BY_ROLE: Record<AppRole, NavItem[]> = {
     { href: "/dashboard/tasks", label: "Görevler", icon: <ClipboardList className="h-5 w-5" /> },
     { href: "/dashboard/messages", label: "Mesajlar", icon: <MessageSquareMore className="h-5 w-5" /> },
     { href: "/dashboard/workflow", label: "İş Akışı", icon: <Workflow className="h-5 w-5" /> },
-    { href: "/dashboard/handover", label: "Devir-Teslim", icon: <ClipboardCheck className="h-5 w-5" /> },
     { href: "/dashboard/shipping-plan", label: "Sevkiyat Programı", icon: <Truck className="h-5 w-5" /> },
     { href: "/dashboard/production", label: "Üretim", icon: <LayoutDashboard className="h-5 w-5" /> },
     { href: "/dashboard/stock", label: "Stok Takibi", icon: <Package className="h-5 w-5" /> },
@@ -68,7 +65,6 @@ const MENU_BY_ROLE: Record<AppRole, NavItem[]> = {
     { href: "/dashboard/tasks", label: "Görevlerim", icon: <ClipboardList className="h-5 w-5" /> },
     { href: "/dashboard/messages", label: "Mesajlar", icon: <MessageSquareMore className="h-5 w-5" /> },
     { href: "/dashboard/workflow", label: "İş Akışı", icon: <Workflow className="h-5 w-5" /> },
-    { href: "/dashboard/handover", label: "Devir-Teslim", icon: <ClipboardCheck className="h-5 w-5" /> },
     { href: "/dashboard/bobin-entry", label: "Bobin Girişi", icon: <Wrench className="h-5 w-5" /> },
     { href: "/dashboard/production", label: "Üretim Planları", icon: <Factory className="h-5 w-5" /> },
     { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
@@ -77,7 +73,6 @@ const MENU_BY_ROLE: Record<AppRole, NavItem[]> = {
     { href: "/dashboard/tasks", label: "Görevlerim", icon: <ClipboardList className="h-5 w-5" /> },
     { href: "/dashboard/messages", label: "Mesajlar", icon: <MessageSquareMore className="h-5 w-5" /> },
     { href: "/dashboard/workflow", label: "İş Akışı", icon: <Workflow className="h-5 w-5" /> },
-    { href: "/dashboard/handover", label: "Devir-Teslim", icon: <ClipboardCheck className="h-5 w-5" /> },
     { href: "/dashboard/warehouse-entry", label: "Depo Girişi", icon: <Warehouse className="h-5 w-5" /> },
     { href: "/dashboard/stock", label: "Stok", icon: <Package className="h-5 w-5" /> },
     { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
@@ -86,7 +81,6 @@ const MENU_BY_ROLE: Record<AppRole, NavItem[]> = {
     { href: "/dashboard/tasks", label: "Görevlerim", icon: <ClipboardList className="h-5 w-5" /> },
     { href: "/dashboard/messages", label: "Mesajlar", icon: <MessageSquareMore className="h-5 w-5" /> },
     { href: "/dashboard/workflow", label: "İş Akışı", icon: <Workflow className="h-5 w-5" /> },
-    { href: "/dashboard/handover", label: "Devir-Teslim", icon: <ClipboardCheck className="h-5 w-5" /> },
     { href: "/dashboard/shipping-plan", label: "Sevkiyat Programı", icon: <Truck className="h-5 w-5" /> },
     { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
   ],
@@ -95,7 +89,6 @@ const MENU_BY_ROLE: Record<AppRole, NavItem[]> = {
     { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
     { href: "/dashboard/messages", label: "Mesajlar", icon: <MessageSquareMore className="h-5 w-5" /> },
     { href: "/dashboard/workflow", label: "İş Akışı", icon: <Workflow className="h-5 w-5" /> },
-    { href: "/dashboard/handover", label: "Devir-Teslim", icon: <ClipboardCheck className="h-5 w-5" /> },
     { href: "/dashboard/stock", label: "Stok Girişi", icon: <Package className="h-5 w-5" /> },
     { href: "/dashboard/transparency", label: "İşlem Geçmişi", icon: <ShieldCheck className="h-5 w-5" /> },
   ],
@@ -139,12 +132,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         const hasStockAccess = canViewStock(role, fullName) || canCreateStock(role);
         const hasShippingPlanAccess = canViewShippingSchedule(role, fullName);
         const hasAuditTrailAccess = canViewAuditTrail(role);
-        const hasHandoverAccess = canViewHandover(role);
         const filtered = base.filter((item) => {
           if (item.href === "/dashboard/stock") return hasStockAccess;
           if (item.href === "/dashboard/shipping-plan") return hasShippingPlanAccess;
           if (item.href === "/dashboard/transparency") return hasAuditTrailAccess;
-          if (item.href === "/dashboard/handover") return hasHandoverAccess;
           return true;
         });
         if (hasStockAccess && !filtered.some((item) => item.href === "/dashboard/stock")) {
@@ -155,9 +146,6 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         }
         if (hasAuditTrailAccess && !filtered.some((item) => item.href === "/dashboard/transparency")) {
           filtered.push({ href: "/dashboard/transparency", label: "İşlem Geçmişi", icon: <ShieldCheck className="h-5 w-5" /> });
-        }
-        if (hasHandoverAccess && !filtered.some((item) => item.href === "/dashboard/handover")) {
-          filtered.push({ href: "/dashboard/handover", label: "Devir-Teslim", icon: <ClipboardCheck className="h-5 w-5" /> });
         }
         return filtered;
       })()

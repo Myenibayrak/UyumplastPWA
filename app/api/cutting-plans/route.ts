@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuth();
   if (isAuthError(auth)) return auth;
 
-  const roleCheck = requireRole(auth, ["admin", "production"]);
+  const roleCheck = requireRole(auth, ["admin", "sales", "production"]);
   if (roleCheck) return roleCheck;
 
   let body: unknown;

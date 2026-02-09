@@ -24,14 +24,7 @@ Bu plan, karmaşık şirket akışını tek sistemde yönetmek için rol bazlı 
 - Muhasebe stok görmeden giriş yapabilir (sadece giriş modu).
 - Tüm kritik write işlemleri audit log'a yazılır.
 
-## 4) Yeni Eklenen Modül
-- Devir-Teslim (`/dashboard/handover`)
-  - Departman bazlı vardiya notları
-  - Açık/Çözüldü durum takibi
-  - Yönetim rolleri tüm notları görür/yönetir
-  - Diğer roller departman/oluşturduğu notlarla sınırlı çalışır
-
-## 5) Sonraki Sprint (Önerilen)
+## 4) Sonraki Sprint (Önerilen)
 - Sevkiyat kapasite planı: araç/rota/şoför bazlı kapasite kontrolü.
 - SLA paneli: geciken görev/sipariş alarmı.
 - Sipariş maliyet izi: fire, kesim verimi, reel maliyet.

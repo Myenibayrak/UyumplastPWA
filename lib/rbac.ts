@@ -16,6 +16,10 @@ export function canManageOrders(role: AppRole): boolean {
   return ["admin", "sales"].includes(role);
 }
 
+export function canEditOrderDetails(role: AppRole | null | undefined): boolean {
+  return role === "admin" || role === "sales" || role === "accounting";
+}
+
 export function canAssignTasks(role: AppRole): boolean {
   return ["admin", "sales"].includes(role);
 }
@@ -119,7 +123,7 @@ export function canUseBobinEntry(role: AppRole | null | undefined): boolean {
 }
 
 export function canManageProductionPlans(role: AppRole | null | undefined): boolean {
-  return role === "admin" || role === "production";
+  return role === "admin" || role === "sales" || role === "production";
 }
 
 export function canViewOrderHistory(role: AppRole | null | undefined, fullName?: string | null): boolean {
@@ -138,14 +142,6 @@ export function canViewAuditTrail(role: AppRole | null | undefined): boolean {
 
 export function canViewDataEntryPanel(role: AppRole | null | undefined): boolean {
   return role === "admin";
-}
-
-export function canViewHandover(role: AppRole | null | undefined): boolean {
-  return Boolean(role);
-}
-
-export function canManageAllHandover(role: AppRole | null | undefined): boolean {
-  return role === "admin" || role === "sales" || role === "accounting";
 }
 
 export function canManageShippingSchedule(role: AppRole | null | undefined, fullName?: string | null): boolean {
