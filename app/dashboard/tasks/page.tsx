@@ -93,49 +93,81 @@ export default function TasksPage() {
             <p className="text-lg text-muted-foreground">Henüz görev atanmadı. Siparişler sayfasından görev atayabilirsiniz.</p>
           </div>
         ) : (
-          <div className="rounded-lg border bg-white shadow-sm overflow-auto max-h-[calc(100vh-200px)]">
-            <table className="w-full text-xs border-collapse">
-              <thead className="bg-gray-50 sticky top-0 z-10">
-                <tr>
-                  <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Sipariş No</th>
-                  <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Müşteri</th>
-                  <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Ürün</th>
-                  <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Departman</th>
-                  <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Atanan</th>
-                  <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Atayan</th>
-                  <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Öncelik</th>
-                  <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Durum</th>
-                  <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Termin</th>
-                  <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Not</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tasks.map((task, i) => (
-                  <tr key={task.id} className={`border-b hover:bg-blue-50/50 ${i % 2 === 0 ? "bg-white" : "bg-gray-50/30"}`}>
-                    <td className="px-3 py-2 font-mono font-semibold text-blue-700">{task.order_no}</td>
-                    <td className="px-3 py-2">{task.customer}</td>
-                    <td className="px-3 py-2">{task.product_type}{task.micron ? ` ${task.micron}µ` : ""}{task.width ? ` ${task.width}mm` : ""}</td>
-                    <td className="px-3 py-2">
-                      <Badge variant="outline">{ROLE_LABELS[task.department as AppRole] || task.department}</Badge>
-                    </td>
-                    <td className="px-3 py-2">{task.assignee_name || <span className="text-muted-foreground">Departman</span>}</td>
-                    <td className="px-3 py-2">{task.assigned_by_name || <span className="text-muted-foreground">—</span>}</td>
-                    <td className="px-3 py-2">
-                      <span className={task.priority === "urgent" ? "text-red-600 font-bold" : task.priority === "high" ? "text-orange-600 font-semibold" : ""}>
-                        {task.priority === "urgent" ? "🔴 Acil" : task.priority === "high" ? "🟠 Yüksek" : task.priority === "normal" ? "Normal" : "Düşük"}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2">
-                      <Badge className={`text-[10px] ${taskStatusBg[task.status] || ""}`}>
-                        {TASK_STATUS_LABELS[task.status] || task.status}
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-2">{task.due_date ? new Date(task.due_date).toLocaleDateString("tr-TR") : "—"}</td>
-                    <td className="px-3 py-2 max-w-[150px] truncate">{task.progress_note || "—"}</td>
+          <div className="space-y-3">
+            <div className="md:hidden space-y-2">
+              {tasks.map((task) => (
+                <div key={task.id} className="rounded-lg border bg-white p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-mono font-semibold text-blue-700 text-sm">{task.order_no}</p>
+                    <Badge className={`text-[10px] ${taskStatusBg[task.status] || ""}`}>
+                      {TASK_STATUS_LABELS[task.status] || task.status}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-slate-700">{task.customer}</p>
+                  <p className="text-xs text-slate-500">
+                    {task.product_type}{task.micron ? ` ${task.micron}µ` : ""}{task.width ? ` ${task.width}mm` : ""}
+                  </p>
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <Badge variant="outline">{ROLE_LABELS[task.department as AppRole] || task.department}</Badge>
+                    <span>Atanan: {task.assignee_name || "Departman"}</span>
+                    <span>Atayan: {task.assigned_by_name || "—"}</span>
+                    <span>
+                      Öncelik: {task.priority === "urgent" ? "Acil" : task.priority === "high" ? "Yüksek" : task.priority === "normal" ? "Normal" : "Düşük"}
+                    </span>
+                    <span>Termin: {task.due_date ? new Date(task.due_date).toLocaleDateString("tr-TR") : "—"}</span>
+                    <span>Sipariş Termin: {task.ship_date ? new Date(task.ship_date).toLocaleDateString("tr-TR") : "—"}</span>
+                  </div>
+                  {task.progress_note && (
+                    <p className="text-xs text-slate-600 bg-slate-50 rounded p-2">{task.progress_note}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="hidden md:block rounded-lg border bg-white shadow-sm overflow-auto max-h-[calc(100vh-200px)]">
+              <table className="w-full text-xs border-collapse">
+                <thead className="bg-gray-50 sticky top-0 z-10">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Sipariş No</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Müşteri</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Ürün</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Departman</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Atanan</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Atayan</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Öncelik</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Durum</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Termin</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Not</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {tasks.map((task, i) => (
+                    <tr key={task.id} className={`border-b hover:bg-blue-50/50 ${i % 2 === 0 ? "bg-white" : "bg-gray-50/30"}`}>
+                      <td className="px-3 py-2 font-mono font-semibold text-blue-700">{task.order_no}</td>
+                      <td className="px-3 py-2">{task.customer}</td>
+                      <td className="px-3 py-2">{task.product_type}{task.micron ? ` ${task.micron}µ` : ""}{task.width ? ` ${task.width}mm` : ""}</td>
+                      <td className="px-3 py-2">
+                        <Badge variant="outline">{ROLE_LABELS[task.department as AppRole] || task.department}</Badge>
+                      </td>
+                      <td className="px-3 py-2">{task.assignee_name || <span className="text-muted-foreground">Departman</span>}</td>
+                      <td className="px-3 py-2">{task.assigned_by_name || <span className="text-muted-foreground">—</span>}</td>
+                      <td className="px-3 py-2">
+                        <span className={task.priority === "urgent" ? "text-red-600 font-bold" : task.priority === "high" ? "text-orange-600 font-semibold" : ""}>
+                          {task.priority === "urgent" ? "🔴 Acil" : task.priority === "high" ? "🟠 Yüksek" : task.priority === "normal" ? "Normal" : "Düşük"}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2">
+                        <Badge className={`text-[10px] ${taskStatusBg[task.status] || ""}`}>
+                          {TASK_STATUS_LABELS[task.status] || task.status}
+                        </Badge>
+                      </td>
+                      <td className="px-3 py-2">{task.due_date ? new Date(task.due_date).toLocaleDateString("tr-TR") : "—"}</td>
+                      <td className="px-3 py-2 max-w-[150px] truncate">{task.progress_note || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>

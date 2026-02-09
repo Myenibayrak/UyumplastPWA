@@ -208,6 +208,7 @@ export default function ShippingPlanPage() {
                       <div>
                         <p className="text-sm font-semibold text-slate-900">{item.order?.order_no} - {item.order?.customer}</p>
                         <p className="text-xs text-slate-500">{item.order?.product_type} | {item.order?.quantity} {item.order?.unit}</p>
+                        <p className="text-xs text-slate-500">Sipariş Termin: {item.order?.ship_date ? new Date(item.order.ship_date).toLocaleDateString("tr-TR") : "—"}</p>
                         <div className="mt-1 flex flex-wrap gap-2 text-xs">
                           <span className="inline-flex items-center rounded bg-slate-100 px-2 py-0.5">
                             <CalendarClock className="h-3 w-3 mr-1" /> {item.scheduled_time || "--:--"}

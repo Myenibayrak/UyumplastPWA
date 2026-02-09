@@ -88,7 +88,7 @@ export function isFactoryManager(fullName?: string | null): boolean {
 
 export function canViewStock(role: AppRole | null | undefined, fullName?: string | null): boolean {
   if (!role) return false;
-  if (role === "admin" || role === "sales") return true;
+  if (role === "sales") return true;
 
   const normalized = normalizeTurkish(fullName || "");
   const tokens = normalized.split(/\s+/).filter(Boolean);
@@ -133,6 +133,18 @@ export function canViewOrderHistory(role: AppRole | null | undefined, fullName?:
 }
 
 export function canViewAuditTrail(role: AppRole | null | undefined): boolean {
+  return role === "admin" || role === "sales" || role === "accounting";
+}
+
+export function canViewDataEntryPanel(role: AppRole | null | undefined): boolean {
+  return role === "admin";
+}
+
+export function canViewHandover(role: AppRole | null | undefined): boolean {
+  return Boolean(role);
+}
+
+export function canManageAllHandover(role: AppRole | null | undefined): boolean {
   return role === "admin" || role === "sales" || role === "accounting";
 }
 

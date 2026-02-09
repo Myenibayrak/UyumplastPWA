@@ -569,7 +569,7 @@ export default function StockPage() {
         <div className="max-w-3xl mx-auto bg-white rounded-lg border border-slate-200 p-8 text-center">
           <h1 className="text-xl font-semibold text-slate-900 mb-2">Stok Erişimi Yok</h1>
           <p className="text-sm text-slate-600">
-            Stok görünümü sadece satış, yönetici, fabrika müdürü, Muhammed ve Mustafa için açıktır.
+            Stok görünümü sadece satış, fabrika müdürü, Muhammed ve Mustafa için açıktır.
           </p>
         </div>
       ) : (
@@ -759,40 +759,80 @@ export default function StockPage() {
       )}
 
 	      {canView && (
-	      <div className="rounded-lg border bg-white shadow-sm overflow-auto max-h-[calc(100vh-220px)]">
-        <table className="w-full text-xs border-collapse">
-          <thead className="bg-gray-50 sticky top-0 z-10">
-            {table.getHeaderGroups().map((hg) => (
-              <tr key={hg.id}>
-                {hg.headers.map((h) => (
-                  <th key={h.id} className="px-2 py-2 text-left font-semibold text-gray-600 border-b border-r last:border-r-0 whitespace-nowrap"
-                    style={{ width: h.column.getSize() }}
-                  >
-                    {h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}
-                  </th>
-                ))}
-              </tr>
-            ))}
-          </thead>
-          <tbody>
-            {table.getRowModel().rows.length === 0 ? (
-              <tr><td colSpan={columns.length} className="px-4 py-12 text-center text-muted-foreground text-sm">
-                {STOCK_CATEGORY_LABELS[category]} kaydı yok
-              </td></tr>
-            ) : (
-              table.getRowModel().rows.map((row, i) => (
-                <tr key={row.id} className={`border-b hover:bg-blue-50/50 transition-colors ${i % 2 === 0 ? "bg-white" : "bg-gray-50/30"}`}>
-                  {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className="px-2 py-1 border-r last:border-r-0">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
+	        <div className="space-y-3">
+	          <div className="md:hidden rounded-lg border bg-white shadow-sm divide-y">
+	            {table.getRowModel().rows.length === 0 ? (
+	              <div className="px-4 py-10 text-center text-muted-foreground text-sm">
+	                {STOCK_CATEGORY_LABELS[category]} kaydı yok
+	              </div>
+	            ) : (
+	              table.getRowModel().rows.map((row) => {
+	                const item = row.original;
+	                const tapeGroup = extractTapeGroupFromNotes(item.notes) || "Diger";
+	                return (
+	                  <div key={row.id} className="p-3 space-y-1.5">
+	                    <div className="flex items-start justify-between gap-2">
+	                      <div>
+	                        <p className="text-sm font-semibold text-slate-900">{item.product}</p>
+	                        <p className="text-xs text-slate-500">
+	                          {category === "tape"
+	                            ? `Kategori: ${tapeGroup}`
+	                            : `${item.micron ?? "—"}µ • ${item.width ?? "—"}mm`}
+	                        </p>
+	                      </div>
+	                      {canEdit && (
+	                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDelete(item.id)}>
+	                          <Trash2 className="h-3 w-3 text-destructive" />
+	                        </Button>
+	                      )}
+	                    </div>
+	                    <div className="flex flex-wrap gap-2 text-xs text-slate-600">
+	                      <span>Kg: {Number(item.kg || 0).toLocaleString("tr-TR")}</span>
+	                      <span>Adet: {Number(item.quantity || 0).toLocaleString("tr-TR")}</span>
+	                      <span>Lot: {item.lot_no || "—"}</span>
+	                    </div>
+	                    {item.notes && <p className="text-xs text-slate-500">{item.notes}</p>}
+	                  </div>
+	                );
+	              })
+	            )}
+	          </div>
+
+	          <div className="hidden md:block rounded-lg border bg-white shadow-sm overflow-auto max-h-[calc(100vh-220px)]">
+              <table className="w-full text-xs border-collapse">
+                <thead className="bg-gray-50 sticky top-0 z-10">
+                  {table.getHeaderGroups().map((hg) => (
+                    <tr key={hg.id}>
+                      {hg.headers.map((h) => (
+                        <th key={h.id} className="px-2 py-2 text-left font-semibold text-gray-600 border-b border-r last:border-r-0 whitespace-nowrap"
+                          style={{ width: h.column.getSize() }}
+                        >
+                          {h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}
+                        </th>
+                      ))}
+                    </tr>
                   ))}
-                </tr>
-              ))
-            )}
-          </tbody>
-	        </table>
-		      </div>
+                </thead>
+                <tbody>
+                  {table.getRowModel().rows.length === 0 ? (
+                    <tr><td colSpan={columns.length} className="px-4 py-12 text-center text-muted-foreground text-sm">
+                      {STOCK_CATEGORY_LABELS[category]} kaydı yok
+                    </td></tr>
+                  ) : (
+                    table.getRowModel().rows.map((row, i) => (
+                      <tr key={row.id} className={`border-b hover:bg-blue-50/50 transition-colors ${i % 2 === 0 ? "bg-white" : "bg-gray-50/30"}`}>
+                        {row.getVisibleCells().map((cell) => (
+                          <td key={cell.id} className="px-2 py-1 border-r last:border-r-0">
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+	              </table>
+		        </div>
+	        </div>
 	      )}
 
 	      {canView && (
@@ -814,7 +854,34 @@ export default function StockPage() {
 	          <div className="px-4 py-3 border-b bg-gray-50">
 	            <h2 className="text-sm font-semibold text-gray-700">Stok Hareket Geçmişi</h2>
 	          </div>
-	          <div className="max-h-[380px] overflow-auto">
+            <div className="md:hidden divide-y">
+              {movements.length === 0 ? (
+                <div className="px-4 py-10 text-center text-muted-foreground">Hareket kaydı yok</div>
+              ) : (
+                movements.map((m) => (
+                  <div key={m.id} className="p-3 space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-slate-600">{new Date(m.created_at).toLocaleString("tr-TR")}</p>
+                      <span className={m.movement_type === "in" ? "text-green-700 font-medium" : "text-red-700 font-medium"}>
+                        {m.movement_type === "in" ? "Giriş" : "Çıkış"}
+                      </span>
+                    </div>
+                    <p className="text-slate-700">
+                      {m.stock_item?.product || "—"}
+                      {m.stock_item?.micron ? ` ${m.stock_item.micron}µ` : ""}
+                      {m.stock_item?.width ? ` ${m.stock_item.width}mm` : ""}
+                    </p>
+                    <div className="flex gap-2 text-slate-600">
+                      <span>Kg: {Number(m.kg || 0).toLocaleString("tr-TR")}</span>
+                      <span>Adet: {Number(m.quantity || 0).toLocaleString("tr-TR")}</span>
+                    </div>
+                    <p className="text-slate-500">Sebep: {m.reason}</p>
+                    <p className="text-slate-500">Kullanıcı: {m.creator?.full_name || "—"}</p>
+                  </div>
+                ))
+              )}
+            </div>
+	          <div className="hidden md:block max-h-[380px] overflow-auto">
 	            <table className="w-full text-xs border-collapse">
 	              <thead className="bg-gray-50 sticky top-0 z-10">
 	                <tr>

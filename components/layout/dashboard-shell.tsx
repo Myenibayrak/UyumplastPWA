@@ -7,13 +7,13 @@ import { createClient } from "@/lib/supabase/client";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { canCreateStock, canViewAuditTrail, canViewShippingSchedule, canViewStock, resolveRoleByIdentity } from "@/lib/rbac";
+import { canCreateStock, canViewAuditTrail, canViewHandover, canViewShippingSchedule, canViewStock, resolveRoleByIdentity } from "@/lib/rbac";
 import type { AppRole } from "@/lib/types";
 import { ROLE_LABELS } from "@/lib/types";
 import {
   LogOut, Menu, X,
   Package, ClipboardList, Settings, LayoutDashboard,
-  Wrench, Warehouse, Factory, ShieldCheck, Truck, Workflow, MessageSquareMore,
+  Wrench, Warehouse, Factory, ShieldCheck, Truck, Workflow, MessageSquareMore, Database, ClipboardCheck,
 } from "lucide-react";
 
 interface NavItem {
@@ -23,6 +23,17 @@ interface NavItem {
   roles?: AppRole[];
 }
 
+const MOBILE_LABELS: Record<string, string> = {
+  "/dashboard": "Panel",
+  "/dashboard/orders": "Sipariş",
+  "/dashboard/tasks": "Görev",
+  "/dashboard/messages": "Mesaj",
+  "/dashboard/stock": "Stok",
+  "/dashboard/shipping-plan": "Sevkiyat",
+  "/dashboard/data-entry": "Veri",
+  "/dashboard/handover": "Devir",
+};
+
 // Role bazlı menü tanımları
 const MENU_BY_ROLE: Record<AppRole, NavItem[]> = {
   admin: [
@@ -31,11 +42,13 @@ const MENU_BY_ROLE: Record<AppRole, NavItem[]> = {
     { href: "/dashboard/tasks", label: "Görevler", icon: <ClipboardList className="h-5 w-5" /> },
     { href: "/dashboard/messages", label: "Mesajlar", icon: <MessageSquareMore className="h-5 w-5" /> },
     { href: "/dashboard/workflow", label: "İş Akışı", icon: <Workflow className="h-5 w-5" /> },
+    { href: "/dashboard/handover", label: "Devir-Teslim", icon: <ClipboardCheck className="h-5 w-5" /> },
     { href: "/dashboard/shipping-plan", label: "Sevkiyat Programı", icon: <Truck className="h-5 w-5" /> },
     { href: "/dashboard/production", label: "Üretim Planları", icon: <LayoutDashboard className="h-5 w-5" /> },
     { href: "/dashboard/bobin-entry", label: "Bobin Girişi", icon: <Wrench className="h-5 w-5" /> },
     { href: "/dashboard/warehouse-entry", label: "Depo Girişi", icon: <LayoutDashboard className="h-5 w-5" /> },
     { href: "/dashboard/stock", label: "Stok", icon: <Package className="h-5 w-5" /> },
+    { href: "/dashboard/data-entry", label: "Canlı Veri", icon: <Database className="h-5 w-5" /> },
     { href: "/dashboard/transparency", label: "İşlem Geçmişi", icon: <ShieldCheck className="h-5 w-5" /> },
     { href: "/dashboard/settings", label: "Ayarlar", icon: <Settings className="h-5 w-5" /> },
   ],
@@ -45,6 +58,7 @@ const MENU_BY_ROLE: Record<AppRole, NavItem[]> = {
     { href: "/dashboard/tasks", label: "Görevler", icon: <ClipboardList className="h-5 w-5" /> },
     { href: "/dashboard/messages", label: "Mesajlar", icon: <MessageSquareMore className="h-5 w-5" /> },
     { href: "/dashboard/workflow", label: "İş Akışı", icon: <Workflow className="h-5 w-5" /> },
+    { href: "/dashboard/handover", label: "Devir-Teslim", icon: <ClipboardCheck className="h-5 w-5" /> },
     { href: "/dashboard/shipping-plan", label: "Sevkiyat Programı", icon: <Truck className="h-5 w-5" /> },
     { href: "/dashboard/production", label: "Üretim", icon: <LayoutDashboard className="h-5 w-5" /> },
     { href: "/dashboard/stock", label: "Stok Takibi", icon: <Package className="h-5 w-5" /> },
@@ -54,6 +68,7 @@ const MENU_BY_ROLE: Record<AppRole, NavItem[]> = {
     { href: "/dashboard/tasks", label: "Görevlerim", icon: <ClipboardList className="h-5 w-5" /> },
     { href: "/dashboard/messages", label: "Mesajlar", icon: <MessageSquareMore className="h-5 w-5" /> },
     { href: "/dashboard/workflow", label: "İş Akışı", icon: <Workflow className="h-5 w-5" /> },
+    { href: "/dashboard/handover", label: "Devir-Teslim", icon: <ClipboardCheck className="h-5 w-5" /> },
     { href: "/dashboard/bobin-entry", label: "Bobin Girişi", icon: <Wrench className="h-5 w-5" /> },
     { href: "/dashboard/production", label: "Üretim Planları", icon: <Factory className="h-5 w-5" /> },
     { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
@@ -62,6 +77,7 @@ const MENU_BY_ROLE: Record<AppRole, NavItem[]> = {
     { href: "/dashboard/tasks", label: "Görevlerim", icon: <ClipboardList className="h-5 w-5" /> },
     { href: "/dashboard/messages", label: "Mesajlar", icon: <MessageSquareMore className="h-5 w-5" /> },
     { href: "/dashboard/workflow", label: "İş Akışı", icon: <Workflow className="h-5 w-5" /> },
+    { href: "/dashboard/handover", label: "Devir-Teslim", icon: <ClipboardCheck className="h-5 w-5" /> },
     { href: "/dashboard/warehouse-entry", label: "Depo Girişi", icon: <Warehouse className="h-5 w-5" /> },
     { href: "/dashboard/stock", label: "Stok", icon: <Package className="h-5 w-5" /> },
     { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
@@ -70,6 +86,7 @@ const MENU_BY_ROLE: Record<AppRole, NavItem[]> = {
     { href: "/dashboard/tasks", label: "Görevlerim", icon: <ClipboardList className="h-5 w-5" /> },
     { href: "/dashboard/messages", label: "Mesajlar", icon: <MessageSquareMore className="h-5 w-5" /> },
     { href: "/dashboard/workflow", label: "İş Akışı", icon: <Workflow className="h-5 w-5" /> },
+    { href: "/dashboard/handover", label: "Devir-Teslim", icon: <ClipboardCheck className="h-5 w-5" /> },
     { href: "/dashboard/shipping-plan", label: "Sevkiyat Programı", icon: <Truck className="h-5 w-5" /> },
     { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
   ],
@@ -78,6 +95,7 @@ const MENU_BY_ROLE: Record<AppRole, NavItem[]> = {
     { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
     { href: "/dashboard/messages", label: "Mesajlar", icon: <MessageSquareMore className="h-5 w-5" /> },
     { href: "/dashboard/workflow", label: "İş Akışı", icon: <Workflow className="h-5 w-5" /> },
+    { href: "/dashboard/handover", label: "Devir-Teslim", icon: <ClipboardCheck className="h-5 w-5" /> },
     { href: "/dashboard/stock", label: "Stok Girişi", icon: <Package className="h-5 w-5" /> },
     { href: "/dashboard/transparency", label: "İşlem Geçmişi", icon: <ShieldCheck className="h-5 w-5" /> },
   ],
@@ -121,10 +139,12 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         const hasStockAccess = canViewStock(role, fullName) || canCreateStock(role);
         const hasShippingPlanAccess = canViewShippingSchedule(role, fullName);
         const hasAuditTrailAccess = canViewAuditTrail(role);
+        const hasHandoverAccess = canViewHandover(role);
         const filtered = base.filter((item) => {
           if (item.href === "/dashboard/stock") return hasStockAccess;
           if (item.href === "/dashboard/shipping-plan") return hasShippingPlanAccess;
           if (item.href === "/dashboard/transparency") return hasAuditTrailAccess;
+          if (item.href === "/dashboard/handover") return hasHandoverAccess;
           return true;
         });
         if (hasStockAccess && !filtered.some((item) => item.href === "/dashboard/stock")) {
@@ -136,9 +156,38 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         if (hasAuditTrailAccess && !filtered.some((item) => item.href === "/dashboard/transparency")) {
           filtered.push({ href: "/dashboard/transparency", label: "İşlem Geçmişi", icon: <ShieldCheck className="h-5 w-5" /> });
         }
+        if (hasHandoverAccess && !filtered.some((item) => item.href === "/dashboard/handover")) {
+          filtered.push({ href: "/dashboard/handover", label: "Devir-Teslim", icon: <ClipboardCheck className="h-5 w-5" /> });
+        }
         return filtered;
       })()
     : [];
+
+  const mobileQuickItems: NavItem[] = (() => {
+    const preferred = [
+      "/dashboard",
+      "/dashboard/orders",
+      "/dashboard/tasks",
+      "/dashboard/messages",
+      "/dashboard/stock",
+      "/dashboard/shipping-plan",
+      "/dashboard/workflow",
+    ];
+    const selected = preferred
+      .map((href) => navItems.find((item) => item.href === href))
+      .filter((item): item is NavItem => Boolean(item))
+      .slice(0, 4);
+
+    if (selected.length < 4) {
+      for (const item of navItems) {
+        if (selected.some((s) => s.href === item.href)) continue;
+        selected.push(item);
+        if (selected.length >= 4) break;
+      }
+    }
+    return selected;
+  })();
+
   const isActiveLink = (href: string) =>
     href === "/dashboard"
       ? pathname === href
@@ -177,7 +226,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                 href={item.href}
                 onClick={() => setSidebarOpen(false)}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                  "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors",
                   isActiveLink(item.href)
                     ? "bg-blue-600 text-white"
                     : "text-slate-600 hover:bg-slate-100"
@@ -215,9 +264,35 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-4 md:p-6 overflow-auto">
+        <main className="flex-1 p-4 md:p-6 overflow-auto pb-24 lg:pb-6">
           {children}
         </main>
+      </div>
+
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur lg:hidden">
+        <div className="grid grid-cols-5">
+          {mobileQuickItems.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "flex flex-col items-center justify-center gap-1 py-2 text-[11px] font-medium",
+                isActiveLink(item.href) ? "text-blue-700" : "text-slate-600"
+              )}
+            >
+              <span className="h-4 w-4">{item.icon}</span>
+              <span className="truncate max-w-[72px]">{MOBILE_LABELS[item.href] || item.label}</span>
+            </Link>
+          ))}
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            className="flex flex-col items-center justify-center gap-1 py-2 text-[11px] font-medium text-slate-600"
+          >
+            <Menu className="h-4 w-4" />
+            <span>Menü</span>
+          </button>
+        </div>
       </div>
     </div>
   );

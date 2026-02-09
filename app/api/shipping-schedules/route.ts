@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
     .from("shipping_schedules")
     .select(`
       *,
-      order:orders!inner(id, order_no, customer, product_type, quantity, unit, priority, status),
+      order:orders!inner(id, order_no, customer, product_type, quantity, unit, priority, status, ship_date),
       creator:profiles!shipping_schedules_created_by_fkey(id, full_name, role),
       completer:profiles!shipping_schedules_completed_by_fkey(id, full_name, role)
     `)

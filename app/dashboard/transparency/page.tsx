@@ -164,33 +164,51 @@ export default function TransparencyPage() {
         </div>
       )}
 
-      <div className="rounded-lg border bg-white overflow-auto max-h-[70vh]">
-        <table className="w-full text-xs">
-          <thead className="sticky top-0 bg-slate-50 z-10">
-            <tr>
-              <th className="px-3 py-2 text-left">Zaman</th>
-              <th className="px-3 py-2 text-left">İşlem</th>
-              <th className="px-3 py-2 text-left">Tablo</th>
-              <th className="px-3 py-2 text-left">Kullanıcı</th>
-              <th className="px-3 py-2 text-left">Kayıt ID</th>
-            </tr>
-          </thead>
-          <tbody>
-            {logs.length === 0 ? (
-              <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-500">Kayıt yok</td></tr>
-            ) : (
-              logs.map((log, idx) => (
-                <tr key={log.id} className={`border-t ${idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}>
-                  <td className="px-3 py-2 whitespace-nowrap">{new Date(log.created_at).toLocaleString("tr-TR")}</td>
-                  <td className="px-3 py-2 font-medium">{log.action}</td>
-                  <td className="px-3 py-2">{log.table_name}</td>
-                  <td className="px-3 py-2">{log.actor?.full_name || log.user_id}</td>
-                  <td className="px-3 py-2 font-mono">{log.record_id || "—"}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+      <div className="rounded-lg border bg-white overflow-hidden">
+        {logs.length === 0 ? (
+          <div className="px-4 py-10 text-center text-slate-500">Kayıt yok</div>
+        ) : (
+          <>
+            <div className="md:hidden divide-y">
+              {logs.map((log) => (
+                <div key={log.id} className="p-3 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium text-slate-700">{log.action}</p>
+                    <p className="text-[11px] text-slate-500">{new Date(log.created_at).toLocaleString("tr-TR")}</p>
+                  </div>
+                  <p className="text-xs text-slate-600">Tablo: {log.table_name}</p>
+                  <p className="text-xs text-slate-600">Kullanıcı: {log.actor?.full_name || log.user_id}</p>
+                  <p className="text-[11px] text-slate-500 font-mono break-all">Kayıt: {log.record_id || "—"}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="hidden md:block overflow-auto max-h-[70vh]">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-slate-50 z-10">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Zaman</th>
+                    <th className="px-3 py-2 text-left">İşlem</th>
+                    <th className="px-3 py-2 text-left">Tablo</th>
+                    <th className="px-3 py-2 text-left">Kullanıcı</th>
+                    <th className="px-3 py-2 text-left">Kayıt ID</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logs.map((log, idx) => (
+                    <tr key={log.id} className={`border-t ${idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}>
+                      <td className="px-3 py-2 whitespace-nowrap">{new Date(log.created_at).toLocaleString("tr-TR")}</td>
+                      <td className="px-3 py-2 font-medium">{log.action}</td>
+                      <td className="px-3 py-2">{log.table_name}</td>
+                      <td className="px-3 py-2">{log.actor?.full_name || log.user_id}</td>
+                      <td className="px-3 py-2 font-mono">{log.record_id || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

@@ -92,10 +92,14 @@ describe("RBAC helpers", () => {
   });
 
   describe("canViewStock", () => {
-    it("allows admin and sales roles", () => {
-      expect(canViewStock("admin", "İmren Kaya")).toBe(true);
+    it("allows sales role", () => {
       expect(canViewStock("sales", "Rastgele Kullanıcı")).toBe(true);
       expect(canViewStock("accounting", "Rastgele Kullanıcı")).toBe(false);
+    });
+    it("allows Muhammed and Mustafa by name regardless of role", () => {
+      expect(canViewStock("admin", "Muhammed Yenibayrak")).toBe(true);
+      expect(canViewStock("admin", "Mustafa Yılmaz")).toBe(true);
+      expect(canViewStock("admin", "İmren Kaya")).toBe(false);
     });
     it("allows Muhammed and Mustafa by name", () => {
       expect(canViewStock("warehouse", "Muhammed Yenibayrak")).toBe(true);

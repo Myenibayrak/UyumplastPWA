@@ -96,6 +96,7 @@ export default function WorkflowPage() {
                       {task.assigned_by_name && <span>Atayan: {task.assigned_by_name}</span>}
                       <span>Öncelik: {task.priority}</span>
                       {task.due_date && <span>Termin: {new Date(task.due_date).toLocaleDateString("tr-TR")}</span>}
+                      <span>Sipariş Tarihi: {task.ship_date ? new Date(task.ship_date).toLocaleDateString("tr-TR") : "—"}</span>
                     </div>
                   </div>
                 ))}

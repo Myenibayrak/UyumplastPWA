@@ -100,6 +100,7 @@ export function TaskView({ tasks }: TaskViewProps) {
                   {task.micron && <div><span className="text-muted-foreground">Mikron:</span> {task.micron}</div>}
                   {task.width && <div><span className="text-muted-foreground">En:</span> {task.width} mm</div>}
                   {task.quantity && <div><span className="text-muted-foreground">Miktar:</span> {task.quantity} {task.unit}</div>}
+                  <div><span className="text-muted-foreground">Sipariş Termin:</span> {task.ship_date ? new Date(task.ship_date).toLocaleDateString("tr-TR") : "—"}</div>
                 </div>
 
                 {(task.progress_note || task.ready_quantity) && (

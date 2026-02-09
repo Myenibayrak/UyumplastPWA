@@ -160,19 +160,19 @@ export default function ProductionPage() {
   return (
     <div className="space-y-4 max-w-6xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Üretim Planları</h1>
           <p className="text-sm text-slate-500">Kesim planlarını oluşturun ve yönetin</p>
         </div>
-        <Button onClick={handleOpenPlanDialog} size="sm" disabled={!canCreatePlan}>
+        <Button onClick={handleOpenPlanDialog} size="sm" disabled={!canCreatePlan} className="w-full sm:w-auto">
           <Plus className="h-4 w-4 mr-2" />
           Plan Oluştur
         </Button>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-white rounded-lg border border-slate-200 p-4">
           <p className="text-xs text-slate-500">Planlı</p>
           <p className="text-2xl font-bold text-slate-600">{plans.filter((p) => p.status === "planned").length}</p>

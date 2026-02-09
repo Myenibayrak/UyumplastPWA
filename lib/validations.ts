@@ -115,6 +115,26 @@ export const taskMessageCreateSchema = z.object({
   parent_id: z.string().uuid().nullable().optional(),
 });
 
+export const handoverNoteCreateSchema = z.object({
+  department: z.enum(["admin", "sales", "warehouse", "production", "shipping", "accounting"]),
+  shift_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Tarih YYYY-MM-DD olmalı"),
+  title: z.string().min(3, "Başlık en az 3 karakter olmalı").max(200, "Başlık çok uzun"),
+  details: z.string().min(3, "Detay en az 3 karakter olmalı").max(5000, "Detay çok uzun"),
+  priority: z.enum(["low", "normal", "high", "urgent"]).default("normal"),
+});
+
+export const handoverNoteUpdateSchema = z.object({
+  department: z.enum(["admin", "sales", "warehouse", "production", "shipping", "accounting"]).optional(),
+  shift_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Tarih YYYY-MM-DD olmalı").optional(),
+  title: z.string().min(3).max(200).optional(),
+  details: z.string().min(3).max(5000).optional(),
+  priority: z.enum(["low", "normal", "high", "urgent"]).optional(),
+  status: z.enum(["open", "resolved"]).optional(),
+  resolved_note: z.string().max(2000).nullable().optional(),
+}).refine((val) => Object.keys(val).length > 0, {
+  message: "En az bir alan gönderilmeli",
+});
+
 export type StockCreateInput = z.infer<typeof stockCreateSchema>;
 export type StockUpdateInput = z.infer<typeof stockUpdateSchema>;
 
@@ -129,3 +149,5 @@ export type ShippingScheduleCreateInput = z.infer<typeof shippingScheduleCreateS
 export type ShippingScheduleUpdateInput = z.infer<typeof shippingScheduleUpdateSchema>;
 export type DirectMessageCreateInput = z.infer<typeof directMessageCreateSchema>;
 export type TaskMessageCreateInput = z.infer<typeof taskMessageCreateSchema>;
+export type HandoverNoteCreateInput = z.infer<typeof handoverNoteCreateSchema>;
+export type HandoverNoteUpdateInput = z.infer<typeof handoverNoteUpdateSchema>;

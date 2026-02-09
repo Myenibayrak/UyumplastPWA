@@ -231,10 +231,59 @@ export default function OrdersPage() {
     return colors[status] || "bg-slate-100 text-slate-700";
   }
 
+  function formatShortDate(value: string | null | undefined): string {
+    if (!value) return "—";
+    return new Date(value).toLocaleDateString("tr-TR");
+  }
+
+  function renderOrderActions(order: Order, mobile = false) {
+    if ((!(isManager || canClose || canNudge)) || activeTab !== "active") return null;
+    const btnClass = mobile ? "h-8 text-xs flex-1" : "h-7 text-xs";
+
+    return (
+      <div className={`flex ${mobile ? "w-full" : ""} gap-1`}>
+        {isManager && (
+          <Button
+            variant="outline"
+            size="sm"
+            className={btnClass}
+            onClick={() => setTaskDialogOrder(order)}
+          >
+            Görev
+          </Button>
+        )}
+        {canNudge && (
+          <Button
+            variant="outline"
+            size="sm"
+            className={btnClass}
+            onClick={() => {
+              setNudgeDialogOrder(order);
+              setNudgeTargetUserId("");
+              setNudgeMessage("");
+            }}
+          >
+            Dürt
+          </Button>
+        )}
+        {canClose && order.status !== "closed" && order.status !== "cancelled" && (
+          <Button
+            variant="outline"
+            size="sm"
+            className={`${btnClass} border-red-200 text-red-600 hover:bg-red-50`}
+            onClick={() => closeOrder(order)}
+          >
+            Evrak Kes
+          </Button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Siparişler</h1>
           <p className="text-sm text-slate-500">
@@ -242,7 +291,7 @@ export default function OrdersPage() {
           </p>
         </div>
         {isManager && activeTab === "active" && (
-          <Button onClick={handleNew} size="sm">
+          <Button onClick={handleNew} size="sm" className="w-full sm:w-auto">
             <Plus className="h-4 w-4 mr-2" />
             Yeni Sipariş
           </Button>
@@ -270,7 +319,7 @@ export default function OrdersPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3 bg-white rounded-lg border border-slate-200 p-3">
+      <div className="grid grid-cols-1 md:grid-cols-[auto_auto_1fr] items-center gap-3 bg-white rounded-lg border border-slate-200 p-3">
         {/* Tab Toggle */}
         <div className="flex bg-slate-100 rounded-lg p-1">
           <button
@@ -296,7 +345,7 @@ export default function OrdersPage() {
         {/* Status Filter */}
         {isWorker ? (
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-32">
+            <SelectTrigger className="w-full md:w-36">
               <SelectValue placeholder="Durum" />
             </SelectTrigger>
             <SelectContent>
@@ -308,7 +357,7 @@ export default function OrdersPage() {
           </Select>
         ) : (
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-32">
+            <SelectTrigger className="w-full md:w-36">
               <SelectValue placeholder="Durum" />
             </SelectTrigger>
             <SelectContent>
@@ -323,7 +372,7 @@ export default function OrdersPage() {
         )}
 
         {/* Search */}
-        <div className="relative flex-1 min-w-64">
+        <div className="relative min-w-0 w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <Input
             placeholder="Sipariş no, müşteri, ürün ara..."
@@ -341,7 +390,66 @@ export default function OrdersPage() {
             {searchQuery || statusFilter !== "all" ? "Filtrelemeye uygun sipariş bulunamadı." : "Sipariş bulunmuyor."}
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            <div className="md:hidden divide-y divide-slate-200">
+              {filteredOrders.map((order) => {
+                const readyPercent = getReadyPercent(order);
+                const isReady = readyPercent >= 95;
+                return (
+                  <div key={order.id} className="p-3 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="font-mono text-sm font-semibold text-blue-700">{order.order_no}</p>
+                        <p className="text-sm text-slate-800">{order.customer}</p>
+                        <p className="text-xs text-slate-500">
+                          {order.product_type}
+                          {order.micron && order.width ? ` • ${order.micron}μ ${order.width}mm` : ""}
+                        </p>
+                      </div>
+                      <Badge className={getStatusColor(order.status)}>
+                        {ORDER_STATUS_LABELS[order.status]}
+                      </Badge>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="inline-flex items-center rounded bg-slate-100 px-2 py-1">
+                        Kaynak: {SOURCE_TYPE_ICONS[order.source_type]}
+                      </span>
+                      <span className={isReady ? "text-green-700 font-semibold" : "text-slate-600"}>
+                        Hazır: %{Math.round(readyPercent)}
+                      </span>
+                      <span className="text-slate-500">
+                        {(order.stock_ready_kg || 0) + (order.production_ready_kg || 0)} / {order.quantity}
+                      </span>
+                      <span className="text-slate-500">Öncelik: {order.priority}</span>
+                      <span className="text-slate-500">Termin: {formatShortDate(order.ship_date)}</span>
+                    </div>
+
+                    <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${isReady ? "bg-green-500" : "bg-blue-500"}`}
+                        style={{ width: `${readyPercent}%` }}
+                      />
+                    </div>
+
+                    {!isWorker && (
+                      <p className="text-xs text-slate-500">
+                        Miktar: {order.quantity} {order.unit}
+                      </p>
+                    )}
+                    {showFinance && (
+                      <p className="text-xs text-slate-500">
+                        Fiyat: {order.price ? `${order.price.toLocaleString("tr-TR")} ${order.currency}` : "—"}
+                      </p>
+                    )}
+
+                    {renderOrderActions(order, true)}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
@@ -351,6 +459,8 @@ export default function OrdersPage() {
                   {!isWorker && <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">Miktar</th>}
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">Kaynak</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">Hazırlık</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">Öncelik</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">Termin</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">Durum</th>
                   {showFinance && <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">Fiyat</th>}
                   {(isManager || canClose) && activeTab === "active" && (
@@ -405,6 +515,8 @@ export default function OrdersPage() {
                           </div>
                         </div>
                       </td>
+                      <td className="px-4 py-3 text-xs capitalize">{order.priority}</td>
+                      <td className="px-4 py-3 text-xs">{formatShortDate(order.ship_date)}</td>
                       <td className="px-4 py-3">
                         <Badge className={getStatusColor(order.status)}>
                           {ORDER_STATUS_LABELS[order.status]}
@@ -423,42 +535,7 @@ export default function OrdersPage() {
                       )}
                       {(isManager || canClose) && activeTab === "active" && (
                         <td className="px-4 py-3">
-                          <div className="flex gap-1">
-                            {isManager && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 text-xs"
-                                onClick={() => setTaskDialogOrder(order)}
-                              >
-                                Görev
-                              </Button>
-                            )}
-                            {canNudge && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 text-xs"
-                                onClick={() => {
-                                  setNudgeDialogOrder(order);
-                                  setNudgeTargetUserId("");
-                                  setNudgeMessage("");
-                                }}
-                              >
-                                Dürt
-                              </Button>
-                            )}
-                            {canClose && order.status !== "closed" && order.status !== "cancelled" && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 text-xs border-red-200 text-red-600 hover:bg-red-50"
-                                onClick={() => closeOrder(order)}
-                              >
-                                Evrak Kes
-                              </Button>
-                            )}
-                          </div>
+                          {renderOrderActions(order)}
                         </td>
                       )}
                     </tr>
@@ -466,7 +543,8 @@ export default function OrdersPage() {
                 })}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </div>
 

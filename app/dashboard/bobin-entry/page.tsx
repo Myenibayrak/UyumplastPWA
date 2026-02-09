@@ -236,12 +236,12 @@ export default function BobinEntryPage() {
         <div className="bg-white rounded-lg border border-slate-200 p-4">
           <h2 className="text-sm font-semibold text-slate-700 mb-4">Bobin Bilgileri</h2>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Manuel Giriş - Sarı */}
             <div className="col-span-2 space-y-3">
               <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
                 <p className="text-xs font-medium text-yellow-800 mb-2">Bobin Bilgileri (Manuel Giriş)</p>
-                <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <Label>Bobin No</Label>
                     <Input value={bobbinNo} onChange={(e) => setBobbinNo(e.target.value)} placeholder="BOB-..." />
@@ -269,7 +269,7 @@ export default function BobinEntryPage() {
             {/* Otomatik - Gri */}
             <div className="col-span-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
               <p className="text-xs font-medium text-slate-600 mb-2">Sipariş Bilgisi (Otomatik)</p>
-              <div className="grid grid-cols-3 gap-4 text-sm">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                 <div>
                   <p className="text-slate-500">Sipariş No</p>
                   <p className="font-medium">{(selectedPlan.order as Order).order_no}</p>
