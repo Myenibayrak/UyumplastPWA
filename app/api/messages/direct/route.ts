@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, isAuthError } from "@/lib/auth/guards";
 import { directMessageCreateSchema } from "@/lib/validations";
+import { isMissingTableError } from "@/lib/supabase/postgrest-errors";
 
 type DirectMessageRow = {
   id: string;
@@ -34,7 +35,10 @@ export async function GET(request: NextRequest) {
       .order("created_at", { ascending: true })
       .limit(400);
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+      if (isMissingTableError(error, "direct_messages")) return NextResponse.json([]);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 
     await supabase
       .from("direct_messages")
@@ -53,7 +57,10 @@ export async function GET(request: NextRequest) {
     .order("created_at", { ascending: false })
     .limit(800);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    if (isMissingTableError(error, "direct_messages")) return NextResponse.json([]);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
   const rows = (data ?? []) as DirectMessageRow[];
   const byCounterpart = new Map<string, {
@@ -125,6 +132,18 @@ export async function POST(request: NextRequest) {
     .eq("id", parsed.data.recipient_id)
     .single();
   if (!recipient) return NextResponse.json({ error: "Hedef kullanıcı bulunamadı" }, { status: 404 });
+
+  // Fail fast with explicit setup guidance when messaging table is unavailable.
+  const { error: probeError } = await supabase
+    .from("direct_messages")
+    .select("id")
+    .limit(1);
+  if (probeError && isMissingTableError(probeError, "direct_messages")) {
+    return NextResponse.json(
+      { error: "Direkt mesaj altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
+      { status: 503 }
+    );
+  }
 
   if (parsed.data.parent_id) {
     const { data: parent } = await supabase
@@ -207,6 +226,9 @@ export async function PATCH(request: NextRequest) {
     .is("read_at", null)
     .select("id");
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    if (isMissingTableError(error, "direct_messages")) return NextResponse.json({ success: true, count: 0 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
   return NextResponse.json({ success: true, count: (data ?? []).length });
 }

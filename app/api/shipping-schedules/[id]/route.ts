@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, isAuthError } from "@/lib/auth/guards";
 import { canCompleteShipping, canManageShippingSchedule, canViewShippingSchedule } from "@/lib/rbac";
 import { shippingScheduleUpdateSchema } from "@/lib/validations";
+import { isMissingTableError } from "@/lib/supabase/postgrest-errors";
 
 export async function GET(_request: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireAuth();
@@ -24,7 +25,15 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
     .eq("id", params.id)
     .single();
 
-  if (error || !data) return NextResponse.json({ error: error?.message || "Plan bulunamadı" }, { status: 404 });
+  if (error || !data) {
+    if (isMissingTableError(error, "shipping_schedules")) {
+      return NextResponse.json(
+        { error: "Sevkiyat programı altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
+        { status: 503 }
+      );
+    }
+    return NextResponse.json({ error: error?.message || "Plan bulunamadı" }, { status: 404 });
+  }
   return NextResponse.json(data);
 }
 
@@ -53,6 +62,17 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   }
 
   const supabase = createAdminClient();
+  const { error: probeError } = await supabase
+    .from("shipping_schedules")
+    .select("id")
+    .limit(1);
+  if (probeError && isMissingTableError(probeError, "shipping_schedules")) {
+    return NextResponse.json(
+      { error: "Sevkiyat programı altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
+      { status: 503 }
+    );
+  }
+
   const { data: before, error: beforeError } = await supabase
     .from("shipping_schedules")
     .select("*")
@@ -105,6 +125,17 @@ export async function DELETE(_request: NextRequest, { params }: { params: { id: 
   }
 
   const supabase = createAdminClient();
+  const { error: probeError } = await supabase
+    .from("shipping_schedules")
+    .select("id")
+    .limit(1);
+  if (probeError && isMissingTableError(probeError, "shipping_schedules")) {
+    return NextResponse.json(
+      { error: "Sevkiyat programı altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
+      { status: 503 }
+    );
+  }
+
   const { data: before } = await supabase
     .from("shipping_schedules")
     .select("*")

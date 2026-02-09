@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { requireAuth, isAuthError } from "@/lib/auth/guards";
 import { canViewStock } from "@/lib/rbac";
+import { isMissingRelationshipError, isMissingTableError } from "@/lib/supabase/postgrest-errors";
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
   const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 500) : 100;
 
   const supabase = createServerSupabase();
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("stock_movements")
     .select(`
       *,
@@ -26,7 +27,33 @@ export async function GET(request: NextRequest) {
     .order("created_at", { ascending: false })
     .limit(limit * 2);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error && isMissingRelationshipError(error, "stock_movements", "profiles")) {
+    const retry = await supabase
+      .from("stock_movements")
+      .select(`
+        *,
+        stock_item:stock_items(id, category, product, micron, width, lot_no)
+      `)
+      .order("created_at", { ascending: false })
+      .limit(limit * 2);
+    data = retry.data;
+    error = retry.error;
+  }
+
+  if (error && isMissingRelationshipError(error, "stock_movements", "stock_items")) {
+    const retry = await supabase
+      .from("stock_movements")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(limit * 2);
+    data = retry.data;
+    error = retry.error;
+  }
+
+  if (error) {
+    if (isMissingTableError(error, "stock_movements")) return NextResponse.json([]);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
   let rows = data ?? [];
   if (category) {

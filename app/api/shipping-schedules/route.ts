@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, isAuthError } from "@/lib/auth/guards";
 import { canManageShippingSchedule, canViewShippingSchedule } from "@/lib/rbac";
 import { shippingScheduleCreateSchema } from "@/lib/validations";
+import { isMissingTableError } from "@/lib/supabase/postgrest-errors";
 
 function getTodayIsoDate() {
   return new Date().toISOString().slice(0, 10);
@@ -77,7 +78,10 @@ export async function GET(request: NextRequest) {
   if (status && status !== "all") query = query.eq("status", status);
 
   const { data, error } = await query;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    if (isMissingTableError(error, "shipping_schedules")) return NextResponse.json([]);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
   return NextResponse.json(data ?? []);
 }
 
@@ -100,6 +104,16 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const supabase = createAdminClient();
+  const { error: probeError } = await supabase
+    .from("shipping_schedules")
+    .select("id")
+    .limit(1);
+  if (probeError && isMissingTableError(probeError, "shipping_schedules")) {
+    return NextResponse.json(
+      { error: "Sevkiyat programı altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
+      { status: 503 }
+    );
+  }
 
   const { data: order, error: orderError } = await supabase
     .from("orders")

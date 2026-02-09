@@ -1124,6 +1124,14 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+  if (/postgres:\/\/postgres:password@|postgresql:\/\/postgres:password@/i.test(dbUrl)) {
+    return NextResponse.json(
+      {
+        error: "SUPABASE_DB_URL placeholder password içeriyor. Gerçek DB şifresi ile güncelleyin (Supabase > Settings > Database).",
+      },
+      { status: 500 }
+    );
+  }
 
   const client = new Client({ connectionString: dbUrl });
 

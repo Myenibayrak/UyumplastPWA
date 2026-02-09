@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, isAuthError } from "@/lib/auth/guards";
 import { taskMessageCreateSchema } from "@/lib/validations";
+import { isMissingTableError } from "@/lib/supabase/postgrest-errors";
 
 const MANAGER_ROLES = new Set(["admin", "sales", "accounting"]);
 
@@ -48,7 +49,10 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
     .order("created_at", { ascending: true })
     .limit(400);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    if (isMissingTableError(error, "task_messages")) return NextResponse.json([]);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
   return NextResponse.json(data ?? []);
 }
 
@@ -77,6 +81,17 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   if (taskError || !task) return NextResponse.json({ error: taskError?.message || "Görev bulunamadı" }, { status: 404 });
   if (!canAccessTask(auth, task as unknown as TaskContext)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { error: probeError } = await supabase
+    .from("task_messages")
+    .select("id")
+    .limit(1);
+  if (probeError && isMissingTableError(probeError, "task_messages")) {
+    return NextResponse.json(
+      { error: "Görev mesajlaşma altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
+      { status: 503 }
+    );
   }
 
   if (parsed.data.parent_id) {

@@ -3,6 +3,68 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, requireRole, isAuthError } from "@/lib/auth/guards";
 import { cuttingPlanCreateSchema } from "@/lib/validations";
 import type { OrderStatus } from "@/lib/types";
+import { isMissingRelationshipError, isMissingTableError } from "@/lib/supabase/postgrest-errors";
+
+type CuttingPlanBase = {
+  id: string;
+  order_id: string;
+  assigned_to: string | null;
+  planned_by: string | null;
+} & Record<string, unknown>;
+
+async function enrichCuttingPlans(supabase: ReturnType<typeof createAdminClient>, rows: CuttingPlanBase[]) {
+  if (rows.length === 0) return [];
+
+  const orderIds = Array.from(new Set(rows.map((r) => r.order_id).filter(Boolean)));
+  const profileIds = Array.from(
+    new Set(
+      rows
+        .flatMap((r) => [r.assigned_to, r.planned_by])
+        .filter((v): v is string => Boolean(v))
+    )
+  );
+  const planIds = rows.map((r) => r.id);
+
+  const [ordersRes, profilesRes, entriesRes] = await Promise.all([
+    orderIds.length > 0
+      ? supabase
+          .from("orders")
+          .select("id, order_no, customer, product_type, micron, width, quantity, unit, trim_width, ship_date, priority, status")
+          .in("id", orderIds)
+      : Promise.resolve({ data: [], error: null }),
+    profileIds.length > 0
+      ? supabase
+          .from("profiles")
+          .select("id, full_name, role")
+          .in("id", profileIds)
+      : Promise.resolve({ data: [], error: null }),
+    planIds.length > 0
+      ? supabase
+          .from("cutting_entries")
+          .select("*")
+          .in("cutting_plan_id", planIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  const orderMap = new Map((ordersRes.data ?? []).map((o: { id: string }) => [o.id, o]));
+  const profileMap = new Map((profilesRes.data ?? []).map((p: { id: string }) => [p.id, p]));
+  const entriesMap = new Map<string, Array<Record<string, unknown>>>();
+  for (const entry of (entriesRes.data ?? []) as Array<Record<string, unknown>>) {
+    const planId = String(entry.cutting_plan_id || "");
+    if (!planId) continue;
+    const list = entriesMap.get(planId) ?? [];
+    list.push(entry);
+    entriesMap.set(planId, list);
+  }
+
+  return rows.map((row) => ({
+    ...row,
+    order: orderMap.get(row.order_id) ?? null,
+    assignee: row.assigned_to ? profileMap.get(row.assigned_to) ?? null : null,
+    planner: row.planned_by ? profileMap.get(row.planned_by) ?? null : null,
+    entries: entriesMap.get(row.id) ?? [],
+  }));
+}
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -27,8 +89,34 @@ export async function GET(request: NextRequest) {
   if (status && status !== "all") query = query.eq("status", status);
   if (assignedTo) query = query.eq("assigned_to", assignedTo);
 
-  const { data, error } = await query;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  let { data, error } = await query;
+  if (error) {
+    if (isMissingTableError(error, "cutting_plans")) return NextResponse.json([]);
+    if (
+      isMissingRelationshipError(error, "cutting_plans", "profiles")
+      || isMissingRelationshipError(error, "cutting_plans", "orders")
+      || isMissingRelationshipError(error, "cutting_plans", "cutting_entries")
+    ) {
+      let fallbackQuery = supabase
+        .from("cutting_plans")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (status && status !== "all") fallbackQuery = fallbackQuery.eq("status", status);
+      if (assignedTo) fallbackQuery = fallbackQuery.eq("assigned_to", assignedTo);
+
+      const retry = await fallbackQuery;
+      if (retry.error) {
+        if (isMissingTableError(retry.error, "cutting_plans")) return NextResponse.json([]);
+        return NextResponse.json({ error: retry.error.message }, { status: 500 });
+      }
+
+      const enriched = await enrichCuttingPlans(supabase, (retry.data ?? []) as CuttingPlanBase[]);
+      return NextResponse.json(enriched);
+    }
+
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
   return NextResponse.json(data ?? []);
 }
 
@@ -73,6 +161,12 @@ export async function POST(request: NextRequest) {
       .select("id, category, product, micron, width, kg")
       .eq("id", parsed.data.source_stock_id)
       .single();
+    if (stockError && isMissingTableError(stockError, "stock_items")) {
+      return NextResponse.json(
+        { error: "Stok altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
+        { status: 503 }
+      );
+    }
     if (stockError || !stockItem) {
       return NextResponse.json({ error: stockError?.message || "Kaynak stok kartı bulunamadı" }, { status: 404 });
     }
@@ -110,6 +204,12 @@ export async function POST(request: NextRequest) {
     .select()
     .single();
 
+  if (error && isMissingTableError(error, "cutting_plans")) {
+    return NextResponse.json(
+      { error: "Üretim planı altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
+      { status: 503 }
+    );
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   // Move order into production only when it is in pre-production states.

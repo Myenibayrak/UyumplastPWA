@@ -4,6 +4,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { requireAuth, requireRole, isAuthError } from "@/lib/auth/guards";
 import { orderCreateSchema } from "@/lib/validations";
 import { canViewFinance, stripFinanceFields } from "@/lib/rbac";
+import { isMissingRelationshipError } from "@/lib/supabase/postgrest-errors";
 
 export async function GET() {
   try {
@@ -16,13 +17,28 @@ export async function GET() {
       .select("*, order_tasks(id, department, status, assigned_to, assignee:profiles!order_tasks_assigned_to_fkey(full_name))")
       .order("created_at", { ascending: false });
 
+    if (error && isMissingRelationshipError(error, "order_tasks", "profiles")) {
+      const fallback = await supabase
+        .from("orders")
+        .select("*, order_tasks(id, department, status, assigned_to)")
+        .order("created_at", { ascending: false });
+      data = fallback.data;
+      error = fallback.error;
+    }
+
     // Fallback to auth-bound server client if service-role env is missing/misconfigured.
     if (error || !data || data.length === 0) {
       const serverSupabase = createServerSupabase();
-      const retry = await serverSupabase
+      let retry = await serverSupabase
         .from("orders")
         .select("*, order_tasks(id, department, status, assigned_to, assignee:profiles!order_tasks_assigned_to_fkey(full_name))")
         .order("created_at", { ascending: false });
+      if (retry.error && isMissingRelationshipError(retry.error, "order_tasks", "profiles")) {
+        retry = await serverSupabase
+          .from("orders")
+          .select("*, order_tasks(id, department, status, assigned_to)")
+          .order("created_at", { ascending: false });
+      }
       data = retry.data;
       error = retry.error;
     }

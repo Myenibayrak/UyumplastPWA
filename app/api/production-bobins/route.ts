@@ -3,6 +3,62 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, requireRole, isAuthError } from "@/lib/auth/guards";
 import { PRODUCTION_READY_STATUSES } from "@/lib/production-ready";
 import { calculateReadyMetrics, deriveOrderStatusFromReady } from "@/lib/order-ready";
+import { isMissingRelationshipError, isMissingTableError } from "@/lib/supabase/postgrest-errors";
+
+type BobinBase = {
+  id: string;
+  order_id: string;
+  cutting_plan_id: string | null;
+  entered_by: string | null;
+  warehouse_in_by: string | null;
+} & Record<string, unknown>;
+
+async function enrichBobins(supabase: ReturnType<typeof createAdminClient>, rows: BobinBase[]) {
+  if (rows.length === 0) return [];
+
+  const orderIds = Array.from(new Set(rows.map((r) => r.order_id).filter(Boolean)));
+  const cuttingPlanIds = Array.from(new Set(rows.map((r) => r.cutting_plan_id).filter((v): v is string => Boolean(v))));
+  const profileIds = Array.from(
+    new Set(
+      rows
+        .flatMap((r) => [r.entered_by, r.warehouse_in_by])
+        .filter((v): v is string => Boolean(v))
+    )
+  );
+
+  const [ordersRes, plansRes, profilesRes] = await Promise.all([
+    orderIds.length > 0
+      ? supabase
+          .from("orders")
+          .select("id, order_no, customer, product_type, micron, width, quantity, unit")
+          .in("id", orderIds)
+      : Promise.resolve({ data: [], error: null }),
+    cuttingPlanIds.length > 0
+      ? supabase
+          .from("cutting_plans")
+          .select("id, source_product, target_width")
+          .in("id", cuttingPlanIds)
+      : Promise.resolve({ data: [], error: null }),
+    profileIds.length > 0
+      ? supabase
+          .from("profiles")
+          .select("id, full_name")
+          .in("id", profileIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  const orderMap = new Map((ordersRes.data ?? []).map((o: { id: string }) => [o.id, o]));
+  const planMap = new Map((plansRes.data ?? []).map((p: { id: string }) => [p.id, p]));
+  const profileMap = new Map((profilesRes.data ?? []).map((p: { id: string }) => [p.id, p]));
+
+  return rows.map((row) => ({
+    ...row,
+    order: orderMap.get(row.order_id) ?? null,
+    cutting_plan: row.cutting_plan_id ? planMap.get(row.cutting_plan_id) ?? null : null,
+    entered_by_profile: row.entered_by ? profileMap.get(row.entered_by) ?? null : null,
+    warehouse_in_by_profile: row.warehouse_in_by ? profileMap.get(row.warehouse_in_by) ?? null : null,
+  }));
+}
 
 async function recalculateProductionReadyKg(supabase: ReturnType<typeof createAdminClient>, orderId: string) {
   const { data: order, error: orderError } = await supabase
@@ -55,8 +111,33 @@ export async function GET(request: NextRequest) {
   if (cuttingPlanId) query = query.eq("cutting_plan_id", cuttingPlanId);
   if (status && status !== "all") query = query.eq("status", status);
 
-  const { data, error } = await query;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  let { data, error } = await query;
+  if (error) {
+    if (isMissingTableError(error, "production_bobins")) return NextResponse.json([]);
+    if (
+      isMissingRelationshipError(error, "production_bobins", "profiles")
+      || isMissingRelationshipError(error, "production_bobins", "orders")
+      || isMissingRelationshipError(error, "production_bobins", "cutting_plans")
+    ) {
+      let fallback = supabase
+        .from("production_bobins")
+        .select("*")
+        .order("entered_at", { ascending: false });
+      if (orderId) fallback = fallback.eq("order_id", orderId);
+      if (cuttingPlanId) fallback = fallback.eq("cutting_plan_id", cuttingPlanId);
+      if (status && status !== "all") fallback = fallback.eq("status", status);
+
+      const retry = await fallback;
+      if (retry.error) {
+        if (isMissingTableError(retry.error, "production_bobins")) return NextResponse.json([]);
+        return NextResponse.json({ error: retry.error.message }, { status: 500 });
+      }
+
+      const enriched = await enrichBobins(supabase, (retry.data ?? []) as BobinBase[]);
+      return NextResponse.json(enriched);
+    }
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
   return NextResponse.json(data ?? []);
 }
 
@@ -86,7 +167,6 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = createAdminClient();
-
   // Get order info for automatic fields and enforce source/status constraints.
   const { data: order, error: orderError } = await supabase
     .from("orders")
@@ -124,6 +204,12 @@ export async function POST(request: NextRequest) {
     .select()
     .single();
 
+  if (error && isMissingTableError(error, "production_bobins")) {
+    return NextResponse.json(
+      { error: "Bobin giriş altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
+      { status: 503 }
+    );
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   // Trigger olmayan ortamlarda da tutarlılık için toplamı API'de garanti et.

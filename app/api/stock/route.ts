@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, isAuthError } from "@/lib/auth/guards";
 import { stockCreateSchema } from "@/lib/validations";
 import { canCreateStock, canViewStock } from "@/lib/rbac";
+import { isMissingTableError } from "@/lib/supabase/postgrest-errors";
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -27,7 +28,10 @@ export async function GET(request: NextRequest) {
   if (product) query = query.eq("product", product);
 
   const { data, error } = await query;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    if (isMissingTableError(error, "stock_items")) return NextResponse.json([]);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
   return NextResponse.json(data ?? []);
 }
 
@@ -68,6 +72,12 @@ export async function POST(request: NextRequest) {
     .select()
     ;
 
+  if (error && isMissingTableError(error, "stock_items")) {
+    return NextResponse.json(
+      { error: "Stok altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
+      { status: 503 }
+    );
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const createdRows = data ?? [];
   if (createdRows.length === 0) {

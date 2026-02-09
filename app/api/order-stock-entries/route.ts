@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, isAuthError } from "@/lib/auth/guards";
 import { canUseWarehouseEntry } from "@/lib/rbac";
 import { calculateReadyMetrics, deriveOrderStatusFromReady } from "@/lib/order-ready";
+import { isMissingTableError } from "@/lib/supabase/postgrest-errors";
 
 async function recalculateStockReadyKgAndStatus(supabase: ReturnType<typeof createAdminClient>, orderId: string) {
   const { data: order, error: orderError } = await supabase
@@ -61,7 +62,10 @@ export async function GET(
     .eq("order_id", orderId)
     .order("entered_at", { ascending: false });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    if (isMissingTableError(error, "order_stock_entries")) return NextResponse.json([]);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
   return NextResponse.json(data ?? []);
 }
 
@@ -122,6 +126,12 @@ export async function POST(request: NextRequest) {
     `)
     .single();
 
+  if (error && isMissingTableError(error, "order_stock_entries")) {
+    return NextResponse.json(
+      { error: "Depo giriş altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
+      { status: 503 }
+    );
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   // Trigger olmayan ortamlarda da tutarlılık için toplamı ve sipariş durumunu API'de garanti et.

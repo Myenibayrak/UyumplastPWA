@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, isAuthError } from "@/lib/auth/guards";
 import { canUseWarehouseEntry } from "@/lib/rbac";
 import { calculateReadyMetrics, deriveOrderStatusFromReady } from "@/lib/order-ready";
+import { isMissingTableError } from "@/lib/supabase/postgrest-errors";
 
 async function recalculateStockReadyKgAndStatus(supabase: ReturnType<typeof createAdminClient>, orderId: string) {
   const { data: order, error: orderError } = await supabase
@@ -59,6 +60,12 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
 
   // Delete the entry
   const { error } = await supabase.from("order_stock_entries").delete().eq("id", params.id);
+  if (error && isMissingTableError(error, "order_stock_entries")) {
+    return NextResponse.json(
+      { error: "Depo giriş altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
+      { status: 503 }
+    );
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   // Recalculate stock_ready_kg and status for the order

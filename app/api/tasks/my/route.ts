@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { requireAuth, isAuthError } from "@/lib/auth/guards";
 import { isWorkerRole } from "@/lib/rbac";
+import { isMissingRelationshipError } from "@/lib/supabase/postgrest-errors";
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -33,7 +34,13 @@ export async function GET(request: NextRequest) {
   }
 
   let { data, error } = await query;
-  if (error && /assigned_by|order_tasks_assigned_by_fkey/i.test(error.message || "")) {
+  if (
+    error
+    && (
+      /assigned_by|order_tasks_assigned_by_fkey/i.test(error.message || "")
+      || isMissingRelationshipError(error, "order_tasks", "profiles")
+    )
+  ) {
     let fallbackQuery = supabase
       .from("order_tasks")
       .select(`
@@ -41,6 +48,18 @@ export async function GET(request: NextRequest) {
         order:orders!inner(order_no, customer, product_type, micron, width, quantity, unit, trim_width, ship_date, priority, notes, status),
         assignee:profiles!order_tasks_assigned_to_fkey(id, full_name, role)
       `)
+      .order("created_at", { ascending: false });
+    if (deptFilter && deptFilter !== "all") {
+      fallbackQuery = fallbackQuery.eq("department", deptFilter);
+    }
+    const retry = await fallbackQuery;
+    data = retry.data;
+    error = retry.error;
+  }
+  if (error && isMissingRelationshipError(error, "order_tasks", "orders")) {
+    let fallbackQuery = supabase
+      .from("order_tasks")
+      .select("*")
       .order("created_at", { ascending: false });
     if (deptFilter && deptFilter !== "all") {
       fallbackQuery = fallbackQuery.eq("department", deptFilter);

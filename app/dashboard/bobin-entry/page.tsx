@@ -40,30 +40,52 @@ export default function BobinEntryPage() {
       return;
     }
 
-    const supabase = createClient();
+    const [plansRes, bobinsRes] = await Promise.all([
+      fetch("/api/cutting-plans", { cache: "no-store" }),
+      fetch("/api/production-bobins", { cache: "no-store" }),
+    ]);
 
-    // Load active cutting plans
-    const { data: plans } = await supabase
-      .from("cutting_plans")
-      .select(`
-        *,
-        order:orders!inner(order_no, customer, product_type, micron, width, quantity, unit),
-        produced_bobins:production_bobins(kg, status)
-      `)
-      .in("status", ["planned", "in_progress"])
-      .order("created_at", { ascending: false });
+    if (!plansRes.ok) {
+      const body = await plansRes.json().catch(() => ({}));
+      toast({
+        title: "Kesim planları alınamadı",
+        description: body?.error || "Üretim planı verisi yüklenemedi",
+        variant: "destructive",
+      });
+      setActivePlans([]);
+      setTodayBobins([]);
+      return;
+    }
 
-    if (plans) setActivePlans(plans as CuttingPlanWithMetrics[]);
+    if (!bobinsRes.ok) {
+      const body = await bobinsRes.json().catch(() => ({}));
+      toast({
+        title: "Bobin kayıtları alınamadı",
+        description: body?.error || "Bobin verisi yüklenemedi",
+        variant: "destructive",
+      });
+      setActivePlans([]);
+      setTodayBobins([]);
+      return;
+    }
 
-    // Load today's bobins
+    const allPlans = (await plansRes.json()) as CuttingPlanWithMetrics[];
+    const allBobins = (await bobinsRes.json()) as ProductionBobin[];
+
+    const activeOnly = (Array.isArray(allPlans) ? allPlans : []).filter((p) => ["planned", "in_progress"].includes(p.status));
+    const mergedPlans = activeOnly.map((plan) => ({
+      ...plan,
+      produced_bobins: (Array.isArray(allBobins) ? allBobins : [])
+        .filter((b) => b.cutting_plan_id === plan.id)
+        .map((b) => ({ kg: Number(b.kg || 0), status: String(b.status || "") })),
+    }));
+    setActivePlans(mergedPlans);
+
     const today = new Date().toISOString().split("T")[0];
-    const { data: bobins } = await supabase
-      .from("production_bobins")
-      .select("*")
-      .gte("entered_at", today)
-      .order("entered_at", { ascending: false });
-
-    if (bobins) setTodayBobins(bobins as ProductionBobin[]);
+    const todayOnly = (Array.isArray(allBobins) ? allBobins : [])
+      .filter((b) => String(b.entered_at || "").startsWith(today))
+      .sort((a, b) => String(b.entered_at).localeCompare(String(a.entered_at)));
+    setTodayBobins(todayOnly);
   }, [canUsePage]);
 
   useEffect(() => {

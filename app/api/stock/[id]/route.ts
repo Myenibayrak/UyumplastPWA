@@ -3,6 +3,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { requireAuth, isAuthError } from "@/lib/auth/guards";
 import { stockUpdateSchema } from "@/lib/validations";
 import { canEditStock, canViewStock } from "@/lib/rbac";
+import { isMissingTableError } from "@/lib/supabase/postgrest-errors";
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireAuth();
@@ -31,6 +32,12 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     .select()
     .single();
 
+  if (error && isMissingTableError(error, "stock_items")) {
+    return NextResponse.json(
+      { error: "Stok altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
+      { status: 503 }
+    );
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   if (before && data) {
@@ -105,6 +112,12 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   }
 
   const { error } = await supabase.from("stock_items").delete().eq("id", params.id);
+  if (error && isMissingTableError(error, "stock_items")) {
+    return NextResponse.json(
+      { error: "Stok altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
+      { status: 503 }
+    );
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ success: true });
 }

@@ -48,7 +48,10 @@ export default function ShippingPlanPage() {
       const from = showHistory ? dateIso(-7) : selectedDate;
       const to = showHistory ? dateIso(7) : selectedDate;
       const res = await fetch(`/api/shipping-schedules?date_from=${from}&date_to=${to}`, { cache: "no-store" });
-      if (!res.ok) throw new Error("Sevkiyat planı yüklenemedi");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || "Sevkiyat planı yüklenemedi");
+      }
       const data = await res.json();
       setSchedules(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -61,7 +64,11 @@ export default function ShippingPlanPage() {
   const loadOrders = useCallback(async () => {
     if (!canManage) return;
     const res = await fetch("/api/orders", { cache: "no-store" });
-    if (!res.ok) return;
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      toast({ title: "Siparişler alınamadı", description: body?.error || "Bilinmeyen hata", variant: "destructive" });
+      return;
+    }
     const data: Order[] = await res.json();
     setOrders(data.filter((o) => !["closed", "cancelled", "delivered"].includes(o.status)));
   }, [canManage]);

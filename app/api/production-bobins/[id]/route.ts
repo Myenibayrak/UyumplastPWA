@@ -3,6 +3,54 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, isAuthError } from "@/lib/auth/guards";
 import { PRODUCTION_READY_STATUSES, isProductionReadyStatus } from "@/lib/production-ready";
 import { calculateReadyMetrics, deriveOrderStatusFromReady } from "@/lib/order-ready";
+import { isMissingRelationshipError, isMissingTableError } from "@/lib/supabase/postgrest-errors";
+
+type BobinBase = {
+  id: string;
+  order_id: string;
+  cutting_plan_id: string | null;
+  entered_by: string | null;
+  warehouse_in_by: string | null;
+} & Record<string, unknown>;
+
+async function enrichSingleBobin(supabase: ReturnType<typeof createAdminClient>, row: BobinBase) {
+  const [orderRes, planRes, enteredByRes, warehouseByRes] = await Promise.all([
+    supabase
+      .from("orders")
+      .select("id, order_no, customer, product_type, micron, width, quantity, unit")
+      .eq("id", row.order_id)
+      .maybeSingle(),
+    row.cutting_plan_id
+      ? supabase
+          .from("cutting_plans")
+          .select("id, source_product, target_width")
+          .eq("id", row.cutting_plan_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    row.entered_by
+      ? supabase
+          .from("profiles")
+          .select("id, full_name")
+          .eq("id", row.entered_by)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    row.warehouse_in_by
+      ? supabase
+          .from("profiles")
+          .select("id, full_name")
+          .eq("id", row.warehouse_in_by)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+
+  return {
+    ...row,
+    order: orderRes.data ?? null,
+    cutting_plan: planRes.data ?? null,
+    entered_by_profile: enteredByRes.data ?? null,
+    warehouse_in_by_profile: warehouseByRes.data ?? null,
+  };
+}
 
 async function recalculateProductionReadyKg(supabase: ReturnType<typeof createAdminClient>, orderId: string) {
   const { data: order, error: orderError } = await supabase
@@ -35,7 +83,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   if (isAuthError(auth)) return auth;
 
   const supabase = createAdminClient();
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("production_bobins")
     .select(`
       *,
@@ -47,7 +95,31 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     .eq("id", params.id)
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 404 });
+  if (error) {
+    if (isMissingTableError(error, "production_bobins")) {
+      return NextResponse.json(
+        { error: "Bobin giriş altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
+        { status: 503 }
+      );
+    }
+    if (
+      isMissingRelationshipError(error, "production_bobins", "profiles")
+      || isMissingRelationshipError(error, "production_bobins", "orders")
+      || isMissingRelationshipError(error, "production_bobins", "cutting_plans")
+    ) {
+      const retry = await supabase
+        .from("production_bobins")
+        .select("*")
+        .eq("id", params.id)
+        .single();
+      if (retry.error || !retry.data) {
+        return NextResponse.json({ error: retry.error?.message || "Bobin kaydı bulunamadı" }, { status: 404 });
+      }
+      const enriched = await enrichSingleBobin(supabase, retry.data as BobinBase);
+      return NextResponse.json(enriched);
+    }
+    return NextResponse.json({ error: error.message }, { status: 404 });
+  }
   return NextResponse.json(data);
 }
 
@@ -73,6 +145,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   }
 
   const supabase = createAdminClient();
+
   const { data: before } = await supabase
     .from("production_bobins")
     .select("*")
@@ -126,6 +199,12 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     .select()
     .single();
 
+  if (error && isMissingTableError(error, "production_bobins")) {
+    return NextResponse.json(
+      { error: "Bobin giriş altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
+      { status: 503 }
+    );
+  }
   if (error || !data) return NextResponse.json({ error: error?.message || "Güncelleme hatası" }, { status: 500 });
 
   await recalculateProductionReadyKg(supabase, data.order_id);
@@ -150,11 +229,18 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   }
 
   const supabase = createAdminClient();
-  const { data: row } = await supabase
+  const { data: row, error: rowError } = await supabase
     .from("production_bobins")
     .select("*")
     .eq("id", params.id)
     .single();
+
+  if (rowError && isMissingTableError(rowError, "production_bobins")) {
+    return NextResponse.json(
+      { error: "Bobin giriş altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
+      { status: 503 }
+    );
+  }
 
   if (!row) {
     return NextResponse.json({ error: "Bobin kaydı bulunamadı" }, { status: 404 });
@@ -170,6 +256,12 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   });
 
   const { error } = await supabase.from("production_bobins").delete().eq("id", params.id);
+  if (error && isMissingTableError(error, "production_bobins")) {
+    return NextResponse.json(
+      { error: "Bobin giriş altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
+      { status: 503 }
+    );
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   await recalculateProductionReadyKg(supabase, row.order_id);

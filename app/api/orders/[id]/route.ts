@@ -4,6 +4,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { requireAuth, requireRole, isAuthError } from "@/lib/auth/guards";
 import { orderUpdateSchema, taskAssignSchema } from "@/lib/validations";
 import { canCloseOrders, canViewFinance, stripFinanceFields } from "@/lib/rbac";
+import { isMissingRelationshipError, isMissingTableError } from "@/lib/supabase/postgrest-errors";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireAuth();
@@ -15,6 +16,16 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     .select("*, order_tasks(*, assignee:profiles!order_tasks_assigned_to_fkey(id, full_name, role))")
     .eq("id", params.id)
     .single();
+
+  if (error && isMissingRelationshipError(error, "order_tasks", "profiles")) {
+    const fallback = await supabase
+      .from("orders")
+      .select("*, order_tasks(*)")
+      .eq("id", params.id)
+      .single();
+    data = fallback.data;
+    error = fallback.error;
+  }
 
   // Fallback to auth-bound server client if service-role env is missing/misconfigured.
   if (error || !data) {
@@ -210,32 +221,36 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       .select()
       .single();
 
-    if (taskMsgError) return NextResponse.json({ error: taskMsgError.message }, { status: 500 });
+    if (taskMsgError) {
+      if (!isMissingTableError(taskMsgError, "task_messages")) {
+        return NextResponse.json({ error: taskMsgError.message }, { status: 500 });
+      }
+    } else {
+      const recipients = new Set<string>();
+      if (data.assigned_to) recipients.add(data.assigned_to as string);
+      recipients.delete(auth.userId);
 
-    const recipients = new Set<string>();
-    if (data.assigned_to) recipients.add(data.assigned_to as string);
-    recipients.delete(auth.userId);
+      if (recipients.size > 0) {
+        await supabase.from("notifications").insert(
+          Array.from(recipients).map((userId) => ({
+            user_id: userId,
+            title: "Yeni Görev Mesajı",
+            body: `${auth.fullName || "Bir kullanıcı"}: ${taskMessage.slice(0, 140)}`,
+            type: "task_message",
+            ref_id: data.id as string,
+          }))
+        );
+      }
 
-    if (recipients.size > 0) {
-      await supabase.from("notifications").insert(
-        Array.from(recipients).map((userId) => ({
-          user_id: userId,
-          title: "Yeni Görev Mesajı",
-          body: `${auth.fullName || "Bir kullanıcı"}: ${taskMessage.slice(0, 140)}`,
-          type: "task_message",
-          ref_id: data.id as string,
-        }))
-      );
+      await supabase.from("audit_logs").insert({
+        user_id: auth.userId,
+        action: "INSERT",
+        table_name: "task_messages",
+        record_id: (taskMsgData as { id: string }).id,
+        old_data: null,
+        new_data: taskMsgData,
+      });
     }
-
-    await supabase.from("audit_logs").insert({
-      user_id: auth.userId,
-      action: "INSERT",
-      table_name: "task_messages",
-      record_id: (taskMsgData as { id: string }).id,
-      old_data: null,
-      new_data: taskMsgData,
-    });
   }
 
   return NextResponse.json(data, { status: 201 });

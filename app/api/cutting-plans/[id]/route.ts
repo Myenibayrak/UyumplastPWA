@@ -4,13 +4,58 @@ import { requireAuth, requireRole, isAuthError } from "@/lib/auth/guards";
 import { cuttingPlanUpdateSchema } from "@/lib/validations";
 import { calculateReadyMetrics, deriveOrderStatusFromReady } from "@/lib/order-ready";
 import type { OrderStatus, SourceType } from "@/lib/types";
+import { isMissingRelationshipError, isMissingTableError } from "@/lib/supabase/postgrest-errors";
+
+type CuttingPlanBase = {
+  id: string;
+  order_id: string;
+  assigned_to: string | null;
+  planned_by: string | null;
+} & Record<string, unknown>;
+
+async function enrichCuttingPlan(supabase: ReturnType<typeof createAdminClient>, row: CuttingPlanBase) {
+  const [orderRes, assigneeRes, plannerRes, entriesRes] = await Promise.all([
+    supabase
+      .from("orders")
+      .select("id, order_no, customer, product_type, micron, width, quantity, unit, trim_width, ship_date, priority, status")
+      .eq("id", row.order_id)
+      .maybeSingle(),
+    row.assigned_to
+      ? supabase
+          .from("profiles")
+          .select("id, full_name, role")
+          .eq("id", row.assigned_to)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    row.planned_by
+      ? supabase
+          .from("profiles")
+          .select("id, full_name, role")
+          .eq("id", row.planned_by)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    supabase
+      .from("cutting_entries")
+      .select("*, entered_by_profile:profiles!cutting_entries_entered_by_fkey(full_name)")
+      .eq("cutting_plan_id", row.id)
+      .order("created_at", { ascending: true }),
+  ]);
+
+  return {
+    ...row,
+    order: orderRes.data ?? null,
+    assignee: assigneeRes.data ?? null,
+    planner: plannerRes.data ?? null,
+    entries: entriesRes.data ?? [],
+  };
+}
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireAuth();
   if (isAuthError(auth)) return auth;
 
   const supabase = createAdminClient();
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("cutting_plans")
     .select(`
       *,
@@ -22,7 +67,31 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     .eq("id", params.id)
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 404 });
+  if (error) {
+    if (isMissingTableError(error, "cutting_plans")) {
+      return NextResponse.json(
+        { error: "Üretim planı altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
+        { status: 503 }
+      );
+    }
+    if (
+      isMissingRelationshipError(error, "cutting_plans", "profiles")
+      || isMissingRelationshipError(error, "cutting_plans", "orders")
+      || isMissingRelationshipError(error, "cutting_plans", "cutting_entries")
+    ) {
+      const retry = await supabase
+        .from("cutting_plans")
+        .select("*")
+        .eq("id", params.id)
+        .single();
+      if (retry.error || !retry.data) {
+        return NextResponse.json({ error: retry.error?.message || "Kesim planı bulunamadı" }, { status: 404 });
+      }
+      const enriched = await enrichCuttingPlan(supabase, retry.data as CuttingPlanBase);
+      return NextResponse.json(enriched);
+    }
+    return NextResponse.json({ error: error.message }, { status: 404 });
+  }
   return NextResponse.json(data);
 }
 
@@ -42,19 +111,36 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   }
 
   const supabase = createAdminClient();
+
   const { data: before } = await supabase
     .from("cutting_plans")
     .select("*")
     .eq("id", params.id)
     .single();
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("cutting_plans")
     .update(parsed.data)
     .eq("id", params.id)
     .select("*, order:orders!inner(id, order_no, customer, created_by, quantity, status, source_type, stock_ready_kg)")
     .single();
 
+  if (error && isMissingTableError(error, "cutting_plans")) {
+    return NextResponse.json(
+      { error: "Üretim planı altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
+      { status: 503 }
+    );
+  }
+  if (error && isMissingRelationshipError(error, "cutting_plans", "orders")) {
+    const retry = await supabase
+      .from("cutting_plans")
+      .update(parsed.data)
+      .eq("id", params.id)
+      .select("*")
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
   if (error || !data) return NextResponse.json({ error: error?.message || "Plan güncellenemedi" }, { status: 500 });
 
   await supabase.from("audit_logs").insert({
@@ -68,19 +154,32 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
   const previousStatus = (before as { status?: string } | null)?.status;
   const nextStatus = parsed.data.status;
+  let orderForWorkflow = (data as { order?: unknown }).order as {
+    id: string;
+    order_no: string;
+    customer: string;
+    created_by: string;
+    quantity: number | null;
+    status: OrderStatus;
+    source_type: SourceType;
+    stock_ready_kg: number | null;
+  } | null;
+
+  if (!orderForWorkflow && (nextStatus === "completed" || nextStatus === "in_progress")) {
+    const orderId = (data as { order_id?: string }).order_id;
+    if (orderId) {
+      const { data: fetchedOrder } = await supabase
+        .from("orders")
+        .select("id, order_no, customer, created_by, quantity, status, source_type, stock_ready_kg")
+        .eq("id", orderId)
+        .maybeSingle();
+      orderForWorkflow = (fetchedOrder as typeof orderForWorkflow) ?? null;
+    }
+  }
 
   // On status change, send notifications
-  if (nextStatus === "completed" && previousStatus !== "completed") {
-    const order = data.order as {
-      id: string;
-      order_no: string;
-      customer: string;
-      created_by: string;
-      quantity: number | null;
-      status: OrderStatus;
-      source_type: SourceType;
-      stock_ready_kg: number | null;
-    };
+  if (nextStatus === "completed" && previousStatus !== "completed" && orderForWorkflow) {
+    const order = orderForWorkflow;
 
     // Update order production_ready_kg and final readiness status.
     const { data: entries } = await supabase
@@ -139,8 +238,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     }
   }
 
-  if (nextStatus === "in_progress" && previousStatus !== "in_progress" && data.order) {
-    const order = data.order as { id: string; order_no: string; customer: string; created_by: string };
+  if (nextStatus === "in_progress" && previousStatus !== "in_progress" && orderForWorkflow) {
+    const order = orderForWorkflow;
     await supabase.from("notifications").insert({
       user_id: order.created_by,
       title: "Kesim Başladı",
@@ -163,11 +262,18 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   const supabase = createAdminClient();
 
   // Get the plan before deleting to keep audit trail
-  const { data: plan } = await supabase
+  const { data: plan, error: planError } = await supabase
     .from("cutting_plans")
     .select("source_stock_id, source_kg, target_kg, order_id")
     .eq("id", params.id)
     .single();
+
+  if (planError && isMissingTableError(planError, "cutting_plans")) {
+    return NextResponse.json(
+      { error: "Üretim planı altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
+      { status: 503 }
+    );
+  }
 
   if (!plan) {
     return NextResponse.json({ error: "Kesim planı bulunamadı" }, { status: 404 });
