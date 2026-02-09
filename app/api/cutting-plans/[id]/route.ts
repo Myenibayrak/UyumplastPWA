@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, requireRole, isAuthError } from "@/lib/auth/guards";
 import { cuttingPlanUpdateSchema } from "@/lib/validations";
+import { calculateReadyMetrics, deriveOrderStatusFromReady } from "@/lib/order-ready";
+import type { OrderStatus, SourceType } from "@/lib/types";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireAuth();
@@ -50,7 +52,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     .from("cutting_plans")
     .update(parsed.data)
     .eq("id", params.id)
-    .select("*, order:orders!inner(id, order_no, customer, created_by)")
+    .select("*, order:orders!inner(id, order_no, customer, created_by, quantity, status, source_type, stock_ready_kg)")
     .single();
 
   if (error || !data) return NextResponse.json({ error: error?.message || "Plan güncellenemedi" }, { status: 500 });
@@ -69,9 +71,18 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
   // On status change, send notifications
   if (nextStatus === "completed" && previousStatus !== "completed") {
-    const order = data.order as { id: string; order_no: string; customer: string; created_by: string };
+    const order = data.order as {
+      id: string;
+      order_no: string;
+      customer: string;
+      created_by: string;
+      quantity: number | null;
+      status: OrderStatus;
+      source_type: SourceType;
+      stock_ready_kg: number | null;
+    };
 
-    // Update order ready_quantity from all order pieces of the order.
+    // Update order production_ready_kg and final readiness status.
     const { data: entries } = await supabase
       .from("cutting_entries")
       .select("cut_kg")
@@ -79,9 +90,16 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       .eq("is_order_piece", true);
 
     const totalCutKg = (entries ?? []).reduce((s: number, e: { cut_kg: number }) => s + Number(e.cut_kg || 0), 0);
+    const metrics = calculateReadyMetrics(order.quantity, order.stock_ready_kg, totalCutKg);
+    const nextStatus = deriveOrderStatusFromReady(order.status, order.source_type, metrics.isReady);
+    const orderUpdateData: Record<string, unknown> = { production_ready_kg: totalCutKg };
+    if (nextStatus && nextStatus !== order.status) {
+      orderUpdateData.status = nextStatus;
+    }
+
     const { error: readyUpdateError } = await supabase
       .from("orders")
-      .update({ ready_quantity: totalCutKg, status: "ready" })
+      .update(orderUpdateData)
       .eq("id", order.id);
     if (readyUpdateError) return NextResponse.json({ error: readyUpdateError.message }, { status: 500 });
 
@@ -151,16 +169,18 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     .eq("id", params.id)
     .single();
 
-  if (plan) {
-    await supabase.from("audit_logs").insert({
-      user_id: auth.userId,
-      action: "DELETE",
-      table_name: "cutting_plans",
-      record_id: params.id,
-      old_data: plan,
-      new_data: null,
-    });
+  if (!plan) {
+    return NextResponse.json({ error: "Kesim planı bulunamadı" }, { status: 404 });
   }
+
+  await supabase.from("audit_logs").insert({
+    user_id: auth.userId,
+    action: "DELETE",
+    table_name: "cutting_plans",
+    record_id: params.id,
+    old_data: plan,
+    new_data: null,
+  });
 
   const { error } = await supabase.from("cutting_plans").delete().eq("id", params.id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

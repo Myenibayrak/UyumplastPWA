@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Package, ClipboardList, CheckCircle, AlertTriangle } from "lucide-react";
 import type { AppRole } from "@/lib/types";
-import { isWorkerRole } from "@/lib/rbac";
+import { isWorkerRole, resolveRoleByIdentity } from "@/lib/rbac";
 import { useRouter } from "next/navigation";
 
 interface DashboardStats {
@@ -25,9 +25,10 @@ export default function DashboardPage() {
     const supabase = createClient();
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return;
-      const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+      const { data: profile } = await supabase.from("profiles").select("role, full_name").eq("id", user.id).single();
       if (profile) {
-        const r = profile.role as AppRole;
+        const r = resolveRoleByIdentity(profile.role as AppRole, profile.full_name || "");
+        if (!r) return;
         setRole(r);
         if (isWorkerRole(r)) {
           router.replace("/dashboard/tasks");

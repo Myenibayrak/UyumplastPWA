@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, requireRole, isAuthError } from "@/lib/auth/guards";
 import { cuttingPlanCreateSchema } from "@/lib/validations";
+import type { OrderStatus } from "@/lib/types";
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -47,14 +48,54 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = createAdminClient();
+  const { data: order, error: orderError } = await supabase
+    .from("orders")
+    .select("id, status")
+    .eq("id", parsed.data.order_id)
+    .single();
+  if (orderError || !order) {
+    return NextResponse.json({ error: orderError?.message || "Sipariş bulunamadı" }, { status: 404 });
+  }
+
+  const blockedStatuses: OrderStatus[] = ["cancelled", "closed", "shipped", "delivered"];
+  if (blockedStatuses.includes(order.status as OrderStatus)) {
+    return NextResponse.json({ error: "Bu sipariş için plan oluşturulamaz" }, { status: 400 });
+  }
+
+  let sourceProduct = parsed.data.source_product;
+  let sourceMicron = parsed.data.source_micron ?? null;
+  let sourceWidth = parsed.data.source_width ?? null;
+  let sourceKg = parsed.data.source_kg ?? null;
+
+  if (parsed.data.source_stock_id) {
+    const { data: stockItem, error: stockError } = await supabase
+      .from("stock_items")
+      .select("id, category, product, micron, width, kg")
+      .eq("id", parsed.data.source_stock_id)
+      .single();
+    if (stockError || !stockItem) {
+      return NextResponse.json({ error: stockError?.message || "Kaynak stok kartı bulunamadı" }, { status: 404 });
+    }
+    if (stockItem.category !== "film") {
+      return NextResponse.json({ error: "Kesim planında kaynak stok kategorisi film olmalı" }, { status: 400 });
+    }
+    if (Number(stockItem.kg || 0) <= 0) {
+      return NextResponse.json({ error: "Kaynak stokta kullanılabilir kg yok" }, { status: 400 });
+    }
+
+    sourceProduct = stockItem.product;
+    sourceMicron = stockItem.micron;
+    sourceWidth = stockItem.width;
+    sourceKg = stockItem.kg;
+  }
 
   const planData = {
     order_id: parsed.data.order_id,
     source_stock_id: parsed.data.source_stock_id ?? null,
-    source_product: parsed.data.source_product,
-    source_micron: parsed.data.source_micron ?? null,
-    source_width: parsed.data.source_width ?? null,
-    source_kg: parsed.data.source_kg ?? null,
+    source_product: sourceProduct,
+    source_micron: sourceMicron,
+    source_width: sourceWidth,
+    source_kg: sourceKg,
     target_width: parsed.data.target_width ?? null,
     target_kg: parsed.data.target_kg ?? null,
     target_quantity: parsed.data.target_quantity ?? 1,
@@ -71,14 +112,20 @@ export async function POST(request: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Update order status to in_production.
-  const { error: orderUpdateError } = await supabase
-    .from("orders")
-    .update({
-      status: "in_production",
-    })
-    .eq("id", parsed.data.order_id);
-  if (orderUpdateError) return NextResponse.json({ error: orderUpdateError.message }, { status: 500 });
+  // Move order into production only when it is in pre-production states.
+  if (order.status === "draft" || order.status === "confirmed") {
+    const { error: orderUpdateError } = await supabase
+      .from("orders")
+      .update({
+        status: "in_production",
+      })
+      .eq("id", parsed.data.order_id)
+      .in("status", ["draft", "confirmed"]);
+    if (orderUpdateError) {
+      await supabase.from("cutting_plans").delete().eq("id", data.id);
+      return NextResponse.json({ error: orderUpdateError.message }, { status: 500 });
+    }
+  }
 
   await supabase.from("audit_logs").insert({
     user_id: auth.userId,

@@ -55,8 +55,21 @@ describe("Order Stock Entries POST", () => {
     });
     const listSelectMock = vi.fn(() => ({ eq: listEqMock }));
 
-    const ordersEqMock = vi.fn().mockResolvedValue({ data: null, error: null });
-    const ordersUpdateMock = vi.fn(() => ({ eq: ordersEqMock }));
+    const orderSingleMock = vi.fn().mockResolvedValue({
+      data: {
+        id: "order-1",
+        quantity: 20,
+        status: "confirmed",
+        source_type: "stock",
+        production_ready_kg: 0,
+      },
+      error: null,
+    });
+    const ordersSelectEqMock = vi.fn(() => ({ single: orderSingleMock }));
+    const ordersSelectMock = vi.fn(() => ({ eq: ordersSelectEqMock }));
+
+    const ordersUpdateEqMock = vi.fn().mockResolvedValue({ data: null, error: null });
+    const ordersUpdateMock = vi.fn(() => ({ eq: ordersUpdateEqMock }));
     const auditInsertMock = vi.fn().mockResolvedValue({ data: null, error: null });
 
     fromMock.mockImplementation((table: string) => {
@@ -65,7 +78,7 @@ describe("Order Stock Entries POST", () => {
         if (orderStockEntriesCall === 1) return { insert: insertMock };
         return { select: listSelectMock };
       }
-      if (table === "orders") return { update: ordersUpdateMock };
+      if (table === "orders") return { select: ordersSelectMock, update: ordersUpdateMock };
       if (table === "audit_logs") return { insert: auditInsertMock };
       throw new Error(`Unexpected table ${table}`);
     });
@@ -80,6 +93,39 @@ describe("Order Stock Entries POST", () => {
     const res = await POST(req as any);
     expect(res.status).toBe(201);
     expect(ordersUpdateMock).toHaveBeenCalledWith({ stock_ready_kg: 10 });
-    expect(ordersEqMock).toHaveBeenCalledWith("id", "order-1");
+    expect(ordersUpdateEqMock).toHaveBeenCalledWith("id", "order-1");
+  });
+
+  it("rejects stock entry for production-only orders", async () => {
+    requireAuthMock.mockResolvedValue({ userId: "user-1", role: "warehouse" });
+
+    const ordersSelectSingleMock = vi.fn().mockResolvedValue({
+      data: {
+        id: "order-1",
+        status: "confirmed",
+        source_type: "production",
+      },
+      error: null,
+    });
+    const ordersSelectEqMock = vi.fn(() => ({ single: ordersSelectSingleMock }));
+    const ordersSelectMock = vi.fn(() => ({ eq: ordersSelectEqMock }));
+    const insertMock = vi.fn();
+
+    fromMock.mockImplementation((table: string) => {
+      if (table === "orders") return { select: ordersSelectMock };
+      if (table === "order_stock_entries") return { insert: insertMock };
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const { POST } = await import("@/app/api/order-stock-entries/route");
+    const req = new Request("http://localhost/api/order-stock-entries", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ order_id: "order-1", bobbin_label: "STK-9", kg: 5 }),
+    });
+
+    const res = await POST(req as any);
+    expect(res.status).toBe(400);
+    expect(insertMock).not.toHaveBeenCalled();
   });
 });

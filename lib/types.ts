@@ -155,6 +155,30 @@ export interface Notification {
   created_at: string;
 }
 
+export interface DirectMessage {
+  id: string;
+  sender_id: string;
+  recipient_id: string;
+  parent_id: string | null;
+  message: string;
+  read_at: string | null;
+  created_at: string;
+  updated_at: string;
+  sender?: Pick<Profile, "id" | "full_name" | "role"> | null;
+  recipient?: Pick<Profile, "id" | "full_name" | "role"> | null;
+}
+
+export interface TaskMessage {
+  id: string;
+  task_id: string;
+  sender_id: string;
+  parent_id: string | null;
+  message: string;
+  created_at: string;
+  updated_at: string;
+  sender?: Pick<Profile, "id" | "full_name" | "role"> | null;
+}
+
 export interface Definition {
   id: string;
   category: string;
@@ -387,4 +411,31 @@ export interface OrderStockEntry {
   created_at: string;
   updated_at: string;
   entered_by_profile?: Profile;
+}
+
+export type ShippingScheduleStatus = "planned" | "completed" | "cancelled";
+
+export const SHIPPING_SCHEDULE_STATUS_LABELS: Record<ShippingScheduleStatus, string> = {
+  planned: "Planlandı",
+  completed: "Tamamlandı",
+  cancelled: "İptal",
+};
+
+export interface ShippingSchedule {
+  id: string;
+  order_id: string;
+  scheduled_date: string;
+  scheduled_time: string | null;
+  sequence_no: number;
+  status: ShippingScheduleStatus;
+  notes: string | null;
+  carry_count: number;
+  created_by: string;
+  completed_by: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  order?: Order;
+  creator?: Profile;
+  completer?: Profile;
 }

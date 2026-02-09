@@ -9,14 +9,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import type { CuttingPlan, Order, StockItem, Profile } from "@/lib/types";
+import type { CuttingPlan, Order, StockItem, Profile, AppRole } from "@/lib/types";
 import { CUTTING_PLAN_STATUS_LABELS } from "@/lib/types";
+import { canManageProductionPlans, canViewStock, resolveRoleByIdentity } from "@/lib/rbac";
 import { toast } from "@/hooks/use-toast";
 import { Plus, PlayCircle, CheckCircle } from "lucide-react";
 
 export default function ProductionPage() {
   const [plans, setPlans] = useState<CuttingPlan[]>([]);
-  const [role, setRole] = useState<string>("");
+  const [role, setRole] = useState<AppRole | null>(null);
+  const [fullName, setFullName] = useState("");
   const [planOpen, setPlanOpen] = useState(false);
   const [planLoading, setPlanLoading] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -31,6 +33,9 @@ export default function ProductionPage() {
     target_kg: "",
     notes: "",
   });
+  const hasStockAccess = canViewStock(role, fullName);
+  const canManagePlanStatus = canManageProductionPlans(role);
+  const canCreatePlan = canManagePlanStatus && hasStockAccess;
 
   const loadPlans = useCallback(async () => {
     const res = await fetch("/api/cutting-plans", { cache: "no-store" });
@@ -41,11 +46,15 @@ export default function ProductionPage() {
   }, []);
 
   useEffect(() => {
-    const supabase = createClient();
+      const supabase = createClient();
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return;
-      const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-      if (profile) setRole(profile.role);
+      const { data: profile } = await supabase.from("profiles").select("role, full_name").eq("id", user.id).single();
+      if (profile) {
+        const resolved = resolveRoleByIdentity(profile.role as AppRole, profile.full_name || "");
+        if (resolved) setRole(resolved);
+        setFullName(profile.full_name || "");
+      }
     });
     supabase.from("profiles").select("*").in("role", ["production"]).then(({ data }) => {
       if (data) setOperators(data as Profile[]);
@@ -54,16 +63,34 @@ export default function ProductionPage() {
   }, [loadPlans]);
 
   async function handleOpenPlanDialog() {
+    if (!canCreatePlan) {
+      toast({
+        title: "Plan oluşturma yetkisi yok",
+        description: "Plan oluşturmak için üretim/admin rolü ve stok erişimi gerekir.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     // Load orders and stock
     const orderRes = await fetch("/api/orders", { cache: "no-store" });
     if (orderRes.ok) {
       const all: Order[] = await orderRes.json();
-      setOrders(all.filter((o) => (o.source_type === "production" || o.source_type === "both")));
+      setOrders(
+        all.filter(
+          (o) =>
+            (o.source_type === "production" || o.source_type === "both")
+            && !["closed", "cancelled", "shipped", "delivered"].includes(o.status)
+        )
+      );
     }
 
     const stockRes = await fetch("/api/stock?category=film", { cache: "no-store" });
     if (stockRes.ok) {
       setStockItems(await stockRes.json());
+    } else {
+      toast({ title: "Stok listesi yüklenemedi", variant: "destructive" });
+      return;
     }
 
     setPlanOpen(true);
@@ -109,6 +136,11 @@ export default function ProductionPage() {
   }
 
   async function handleStatusChange(planId: string, status: string) {
+    if (!canManagePlanStatus) {
+      toast({ title: "Durum güncelleme yetkisi yok", variant: "destructive" });
+      return;
+    }
+
     const res = await fetch(`/api/cutting-plans/${planId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -124,7 +156,6 @@ export default function ProductionPage() {
   }
 
   const selectedStock = stockItems.find((s) => s.id === planForm.source_stock_id);
-  const selectedOrder = orders.find((o) => o.id === planForm.order_id);
 
   return (
     <div className="space-y-4 max-w-6xl mx-auto">
@@ -134,7 +165,7 @@ export default function ProductionPage() {
           <h1 className="text-2xl font-bold text-slate-900">Üretim Planları</h1>
           <p className="text-sm text-slate-500">Kesim planlarını oluşturun ve yönetin</p>
         </div>
-        <Button onClick={handleOpenPlanDialog} size="sm">
+        <Button onClick={handleOpenPlanDialog} size="sm" disabled={!canCreatePlan}>
           <Plus className="h-4 w-4 mr-2" />
           Plan Oluştur
         </Button>
@@ -211,7 +242,7 @@ export default function ProductionPage() {
 
               {/* Actions */}
               <div className="mt-4 pt-4 border-t border-slate-200 flex gap-2">
-                {plan.status === "planned" && (
+                {canManagePlanStatus && plan.status === "planned" && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -221,7 +252,7 @@ export default function ProductionPage() {
                     Başlat
                   </Button>
                 )}
-                {plan.status === "in_progress" && (
+                {canManagePlanStatus && plan.status === "in_progress" && (
                   <Button
                     size="sm"
                     onClick={() => handleStatusChange(plan.id, "completed")}

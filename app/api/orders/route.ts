@@ -78,6 +78,15 @@ export async function POST(request: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  await supabase.from("audit_logs").insert({
+    user_id: auth.userId,
+    action: "INSERT",
+    table_name: "orders",
+    record_id: data.id,
+    old_data: null,
+    new_data: data,
+  });
+
   // If source_type is production, notify admin + production users for planning
   if ((parsed.data.source_type === "production" || parsed.data.source_type === "both") && data) {
     const { data: planners } = await supabase

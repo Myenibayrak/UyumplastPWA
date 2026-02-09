@@ -7,18 +7,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import type { Order, OrderStockEntry } from "@/lib/types";
-import { ORDER_STATUS_LABELS, SOURCE_TYPE_ICONS } from "@/lib/types";
+import type { Order, OrderStockEntry, AppRole } from "@/lib/types";
+import { SOURCE_TYPE_ICONS } from "@/lib/types";
+import { canUseWarehouseEntry, resolveRoleByIdentity } from "@/lib/rbac";
 import { toast } from "@/hooks/use-toast";
 import { Search, Plus, Trash2 } from "lucide-react";
 
 export default function WarehouseEntryPage() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [role, setRole] = useState<AppRole | null>(null);
+  const [profileLoaded, setProfileLoaded] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [entries, setEntries] = useState<OrderStockEntry[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [entryDialogOpen, setEntryDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const canUsePage = canUseWarehouseEntry(role);
 
   // Form fields (manuel - mavi)
   const [bobbinLabel, setBobbinLabel] = useState("");
@@ -26,6 +30,10 @@ export default function WarehouseEntryPage() {
   const [notes, setNotes] = useState("");
 
   const loadOrders = useCallback(async () => {
+    if (!canUsePage) {
+      setOrders([]);
+      return;
+    }
     const supabase = createClient();
     const { data } = await supabase
       .from("orders")
@@ -34,7 +42,7 @@ export default function WarehouseEntryPage() {
       .order("created_at", { ascending: false });
 
     if (data) setOrders(data as Order[]);
-  }, []);
+  }, [canUsePage]);
 
   const loadEntries = useCallback(async (orderId: string) => {
     const res = await fetch(`/api/order-stock-entries?order_id=${encodeURIComponent(orderId)}`);
@@ -45,16 +53,34 @@ export default function WarehouseEntryPage() {
   }, []);
 
   useEffect(() => {
-    loadOrders();
-  }, [loadOrders]);
+    const supabase = createClient();
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) {
+        setProfileLoaded(true);
+        return;
+      }
+      const { data: profile } = await supabase.from("profiles").select("role, full_name").eq("id", user.id).single();
+      if (profile) {
+        const resolved = resolveRoleByIdentity(profile.role as AppRole, profile.full_name || "");
+        if (resolved) setRole(resolved);
+      }
+      setProfileLoaded(true);
+    });
+  }, []);
 
   useEffect(() => {
+    if (profileLoaded && canUsePage) loadOrders();
+  }, [profileLoaded, canUsePage, loadOrders]);
+
+  useEffect(() => {
+    if (!canUsePage) return;
     if (selectedOrder) {
       loadEntries(selectedOrder.id);
     }
-  }, [selectedOrder, loadEntries]);
+  }, [selectedOrder, loadEntries, canUsePage]);
 
   useEffect(() => {
+    if (!canUsePage) return;
     if (!selectedOrder) return;
     const refreshed = orders.find((o) => o.id === selectedOrder.id);
     if (!refreshed) {
@@ -65,7 +91,24 @@ export default function WarehouseEntryPage() {
     if (refreshed !== selectedOrder) {
       setSelectedOrder(refreshed);
     }
-  }, [orders, selectedOrder]);
+  }, [orders, selectedOrder, canUsePage]);
+
+  if (!profileLoaded) {
+    return (
+      <div className="max-w-3xl mx-auto bg-white rounded-lg border border-slate-200 p-8 text-center">
+        <p className="text-sm text-slate-500">Yükleniyor...</p>
+      </div>
+    );
+  }
+
+  if (!canUsePage) {
+    return (
+      <div className="max-w-3xl mx-auto bg-white rounded-lg border border-slate-200 p-8 text-center">
+        <h1 className="text-xl font-semibold text-slate-900 mb-2">Depo Girişi Yetkisi Yok</h1>
+        <p className="text-sm text-slate-600">Bu ekran sadece Depo ve Yönetici rolleri için açıktır.</p>
+      </div>
+    );
+  }
 
   async function handleSubmit() {
     if (!selectedOrder || !bobbinLabel || !kg) {

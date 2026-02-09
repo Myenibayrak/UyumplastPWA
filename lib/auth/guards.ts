@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
 import type { AppRole } from "@/lib/types";
+import { resolveRoleByIdentity } from "@/lib/rbac";
 
 export interface AuthResult {
   userId: string;
@@ -22,7 +23,11 @@ export async function requireAuth(): Promise<AuthResult | NextResponse> {
   if (!profile) {
     return NextResponse.json({ error: "Profile not found" }, { status: 403 });
   }
-  return { userId: user.id, role: profile.role as AppRole, fullName: profile.full_name ?? null };
+  const resolvedRole = resolveRoleByIdentity(profile.role as AppRole, profile.full_name ?? null);
+  if (!resolvedRole) {
+    return NextResponse.json({ error: "Role not found" }, { status: 403 });
+  }
+  return { userId: user.id, role: resolvedRole, fullName: profile.full_name ?? null };
 }
 
 export function requireRole(auth: AuthResult, roles: AppRole[]): NextResponse | null {

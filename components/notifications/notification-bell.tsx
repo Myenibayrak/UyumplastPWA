@@ -15,25 +15,33 @@ export function NotificationBell() {
   useEffect(() => {
     const supabase = createClient();
     async function load() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
       const { data } = await supabase
         .from("notifications")
         .select("*")
         .order("created_at", { ascending: false })
         .limit(20);
       if (data) setNotifications(data as Notification[]);
+
+      const channel = supabase
+        .channel(`notifications:${user.id}`)
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` },
+          (payload) => {
+            setNotifications((prev) => [payload.new as Notification, ...prev]);
+          }
+        )
+        .subscribe();
+      return channel;
     }
-    load();
-    const channel = supabase
-      .channel("notifications")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "notifications" },
-        (payload) => {
-          setNotifications((prev) => [payload.new as Notification, ...prev]);
-        }
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    let activeChannel: ReturnType<typeof supabase.channel> | null = null;
+    load().then((channel) => { activeChannel = channel || null; });
+    return () => {
+      if (activeChannel) supabase.removeChannel(activeChannel);
+    };
   }, []);
 
   async function markAsRead(id: string) {

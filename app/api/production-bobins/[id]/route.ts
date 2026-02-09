@@ -2,8 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, isAuthError } from "@/lib/auth/guards";
 import { PRODUCTION_READY_STATUSES, isProductionReadyStatus } from "@/lib/production-ready";
+import { calculateReadyMetrics, deriveOrderStatusFromReady } from "@/lib/order-ready";
 
 async function recalculateProductionReadyKg(supabase: ReturnType<typeof createAdminClient>, orderId: string) {
+  const { data: order, error: orderError } = await supabase
+    .from("orders")
+    .select("id, quantity, status, source_type, stock_ready_kg")
+    .eq("id", orderId)
+    .single();
+  if (orderError || !order) return;
+
   const { data: rows } = await supabase
     .from("production_bobins")
     .select("kg")
@@ -11,7 +19,15 @@ async function recalculateProductionReadyKg(supabase: ReturnType<typeof createAd
     .in("status", [...PRODUCTION_READY_STATUSES]);
 
   const totalKg = (rows ?? []).reduce((sum: number, r: { kg: number }) => sum + Number(r.kg || 0), 0);
-  await supabase.from("orders").update({ production_ready_kg: totalKg }).eq("id", orderId);
+  const metrics = calculateReadyMetrics(order.quantity, order.stock_ready_kg, totalKg);
+  const nextStatus = deriveOrderStatusFromReady(order.status, order.source_type, metrics.isReady);
+
+  const updateData: Record<string, unknown> = { production_ready_kg: totalKg };
+  if (nextStatus && nextStatus !== order.status) {
+    updateData.status = nextStatus;
+  }
+
+  await supabase.from("orders").update(updateData).eq("id", orderId);
 }
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
@@ -99,10 +115,6 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     return NextResponse.json({ error: "Depo rolü not güncelleyemez" }, { status: 403 });
   }
 
-  // Production can update notes.
-  if ("notes" in body && auth.role === "production") {
-    if ("notes" in body) updateData.notes = body.notes;
-  }
   if (Object.keys(updateData).length === 0) {
     return NextResponse.json({ error: "Geçerli alan gönderilmedi" }, { status: 400 });
   }
@@ -144,23 +156,23 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     .eq("id", params.id)
     .single();
 
-  if (row) {
-    await supabase.from("audit_logs").insert({
-      user_id: auth.userId,
-      action: "DELETE",
-      table_name: "production_bobins",
-      record_id: params.id,
-      old_data: row,
-      new_data: null,
-    });
+  if (!row) {
+    return NextResponse.json({ error: "Bobin kaydı bulunamadı" }, { status: 404 });
   }
+
+  await supabase.from("audit_logs").insert({
+    user_id: auth.userId,
+    action: "DELETE",
+    table_name: "production_bobins",
+    record_id: params.id,
+    old_data: row,
+    new_data: null,
+  });
 
   const { error } = await supabase.from("production_bobins").delete().eq("id", params.id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  if (row?.order_id) {
-    await recalculateProductionReadyKg(supabase, row.order_id);
-  }
+  await recalculateProductionReadyKg(supabase, row.order_id);
 
   return NextResponse.json({ success: true });
 }

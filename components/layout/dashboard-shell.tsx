@@ -7,13 +7,13 @@ import { createClient } from "@/lib/supabase/client";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { canViewStock } from "@/lib/rbac";
+import { canCreateStock, canViewAuditTrail, canViewShippingSchedule, canViewStock, resolveRoleByIdentity } from "@/lib/rbac";
 import type { AppRole } from "@/lib/types";
 import { ROLE_LABELS } from "@/lib/types";
 import {
   LogOut, Menu, X,
   Package, ClipboardList, Settings, LayoutDashboard,
-  Wrench, Warehouse, Factory,
+  Wrench, Warehouse, Factory, ShieldCheck, Truck, Workflow, MessageSquareMore,
 } from "lucide-react";
 
 interface NavItem {
@@ -29,38 +29,57 @@ const MENU_BY_ROLE: Record<AppRole, NavItem[]> = {
     { href: "/dashboard", label: "Genel Durum", icon: <LayoutDashboard className="h-5 w-5" /> },
     { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
     { href: "/dashboard/tasks", label: "Görevler", icon: <ClipboardList className="h-5 w-5" /> },
+    { href: "/dashboard/messages", label: "Mesajlar", icon: <MessageSquareMore className="h-5 w-5" /> },
+    { href: "/dashboard/workflow", label: "İş Akışı", icon: <Workflow className="h-5 w-5" /> },
+    { href: "/dashboard/shipping-plan", label: "Sevkiyat Programı", icon: <Truck className="h-5 w-5" /> },
     { href: "/dashboard/production", label: "Üretim Planları", icon: <LayoutDashboard className="h-5 w-5" /> },
     { href: "/dashboard/bobin-entry", label: "Bobin Girişi", icon: <Wrench className="h-5 w-5" /> },
     { href: "/dashboard/warehouse-entry", label: "Depo Girişi", icon: <LayoutDashboard className="h-5 w-5" /> },
     { href: "/dashboard/stock", label: "Stok", icon: <Package className="h-5 w-5" /> },
+    { href: "/dashboard/transparency", label: "İşlem Geçmişi", icon: <ShieldCheck className="h-5 w-5" /> },
     { href: "/dashboard/settings", label: "Ayarlar", icon: <Settings className="h-5 w-5" /> },
   ],
   sales: [
     { href: "/dashboard", label: "Genel Durum", icon: <LayoutDashboard className="h-5 w-5" /> },
     { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
     { href: "/dashboard/tasks", label: "Görevler", icon: <ClipboardList className="h-5 w-5" /> },
+    { href: "/dashboard/messages", label: "Mesajlar", icon: <MessageSquareMore className="h-5 w-5" /> },
+    { href: "/dashboard/workflow", label: "İş Akışı", icon: <Workflow className="h-5 w-5" /> },
+    { href: "/dashboard/shipping-plan", label: "Sevkiyat Programı", icon: <Truck className="h-5 w-5" /> },
     { href: "/dashboard/production", label: "Üretim", icon: <LayoutDashboard className="h-5 w-5" /> },
     { href: "/dashboard/stock", label: "Stok Takibi", icon: <Package className="h-5 w-5" /> },
+    { href: "/dashboard/transparency", label: "İşlem Geçmişi", icon: <ShieldCheck className="h-5 w-5" /> },
   ],
   production: [
     { href: "/dashboard/tasks", label: "Görevlerim", icon: <ClipboardList className="h-5 w-5" /> },
+    { href: "/dashboard/messages", label: "Mesajlar", icon: <MessageSquareMore className="h-5 w-5" /> },
+    { href: "/dashboard/workflow", label: "İş Akışı", icon: <Workflow className="h-5 w-5" /> },
     { href: "/dashboard/bobin-entry", label: "Bobin Girişi", icon: <Wrench className="h-5 w-5" /> },
     { href: "/dashboard/production", label: "Üretim Planları", icon: <Factory className="h-5 w-5" /> },
     { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
   ],
   warehouse: [
     { href: "/dashboard/tasks", label: "Görevlerim", icon: <ClipboardList className="h-5 w-5" /> },
+    { href: "/dashboard/messages", label: "Mesajlar", icon: <MessageSquareMore className="h-5 w-5" /> },
+    { href: "/dashboard/workflow", label: "İş Akışı", icon: <Workflow className="h-5 w-5" /> },
     { href: "/dashboard/warehouse-entry", label: "Depo Girişi", icon: <Warehouse className="h-5 w-5" /> },
     { href: "/dashboard/stock", label: "Stok", icon: <Package className="h-5 w-5" /> },
     { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
   ],
   shipping: [
     { href: "/dashboard/tasks", label: "Görevlerim", icon: <ClipboardList className="h-5 w-5" /> },
+    { href: "/dashboard/messages", label: "Mesajlar", icon: <MessageSquareMore className="h-5 w-5" /> },
+    { href: "/dashboard/workflow", label: "İş Akışı", icon: <Workflow className="h-5 w-5" /> },
+    { href: "/dashboard/shipping-plan", label: "Sevkiyat Programı", icon: <Truck className="h-5 w-5" /> },
     { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
   ],
   accounting: [
     { href: "/dashboard", label: "Genel Durum", icon: <LayoutDashboard className="h-5 w-5" /> },
     { href: "/dashboard/orders", label: "Siparişler", icon: <Package className="h-5 w-5" /> },
+    { href: "/dashboard/messages", label: "Mesajlar", icon: <MessageSquareMore className="h-5 w-5" /> },
+    { href: "/dashboard/workflow", label: "İş Akışı", icon: <Workflow className="h-5 w-5" /> },
+    { href: "/dashboard/stock", label: "Stok Girişi", icon: <Package className="h-5 w-5" /> },
+    { href: "/dashboard/transparency", label: "İşlem Geçmişi", icon: <ShieldCheck className="h-5 w-5" /> },
   ],
 };
 
@@ -81,7 +100,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         .eq("id", user.id)
         .single();
       if (profile) {
-        setRole(profile.role as AppRole);
+        const resolved = resolveRoleByIdentity(profile.role as AppRole, profile.full_name || "");
+        if (resolved) setRole(resolved);
         setFullName(profile.full_name);
       }
     });
@@ -98,10 +118,23 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const navItems: NavItem[] = role
     ? (() => {
         const base = MENU_BY_ROLE[role];
-        const hasStockAccess = canViewStock(role, fullName);
-        const filtered = base.filter((item) => item.href !== "/dashboard/stock" || hasStockAccess);
+        const hasStockAccess = canViewStock(role, fullName) || canCreateStock(role);
+        const hasShippingPlanAccess = canViewShippingSchedule(role, fullName);
+        const hasAuditTrailAccess = canViewAuditTrail(role);
+        const filtered = base.filter((item) => {
+          if (item.href === "/dashboard/stock") return hasStockAccess;
+          if (item.href === "/dashboard/shipping-plan") return hasShippingPlanAccess;
+          if (item.href === "/dashboard/transparency") return hasAuditTrailAccess;
+          return true;
+        });
         if (hasStockAccess && !filtered.some((item) => item.href === "/dashboard/stock")) {
-          filtered.push({ href: "/dashboard/stock", label: "Stok", icon: <Package className="h-5 w-5" /> });
+          filtered.push({ href: "/dashboard/stock", label: canViewStock(role, fullName) ? "Stok" : "Stok Girişi", icon: <Package className="h-5 w-5" /> });
+        }
+        if (hasShippingPlanAccess && !filtered.some((item) => item.href === "/dashboard/shipping-plan")) {
+          filtered.push({ href: "/dashboard/shipping-plan", label: "Sevkiyat Programı", icon: <Truck className="h-5 w-5" /> });
+        }
+        if (hasAuditTrailAccess && !filtered.some((item) => item.href === "/dashboard/transparency")) {
+          filtered.push({ href: "/dashboard/transparency", label: "İşlem Geçmişi", icon: <ShieldCheck className="h-5 w-5" /> });
         }
         return filtered;
       })()

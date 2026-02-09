@@ -8,6 +8,15 @@ import {
   canViewAllOrders,
   canEditSettings,
   canViewStock,
+  canCloseOrders,
+  canCreateStock,
+  canEditStock,
+  canUseWarehouseEntry,
+  canUseBobinEntry,
+  canManageProductionPlans,
+  canViewOrderHistory,
+  canViewAuditTrail,
+  resolveRoleByIdentity,
   hasAnyRole,
   stripFinanceFields,
 } from "@/lib/rbac";
@@ -83,8 +92,10 @@ describe("RBAC helpers", () => {
   });
 
   describe("canViewStock", () => {
-    it("allows sales role", () => {
+    it("allows admin and sales roles", () => {
+      expect(canViewStock("admin", "İmren Kaya")).toBe(true);
       expect(canViewStock("sales", "Rastgele Kullanıcı")).toBe(true);
+      expect(canViewStock("accounting", "Rastgele Kullanıcı")).toBe(false);
     });
     it("allows Muhammed and Mustafa by name", () => {
       expect(canViewStock("warehouse", "Muhammed Yenibayrak")).toBe(true);
@@ -95,7 +106,63 @@ describe("RBAC helpers", () => {
     });
     it("blocks others", () => {
       expect(canViewStock("warehouse", "Ayşe Demir")).toBe(false);
-      expect(canViewStock("admin", "İmren Kaya")).toBe(false);
+      expect(canViewStock("production", "İmren Kaya")).toBe(false);
+    });
+  });
+
+  describe("operation permissions", () => {
+    it("order close permission", () => {
+      expect(canCloseOrders("admin")).toBe(true);
+      expect(canCloseOrders("accounting")).toBe(true);
+      expect(canCloseOrders("sales")).toBe(false);
+    });
+
+    it("stock create/edit permissions", () => {
+      expect(canCreateStock("accounting")).toBe(true);
+      expect(canCreateStock("warehouse")).toBe(false);
+      expect(canEditStock("warehouse")).toBe(false);
+      expect(canEditStock("admin")).toBe(true);
+      expect(canEditStock("accounting")).toBe(false);
+    });
+
+    it("entry screen permissions", () => {
+      expect(canUseWarehouseEntry("warehouse")).toBe(true);
+      expect(canUseWarehouseEntry("production")).toBe(false);
+      expect(canUseBobinEntry("production")).toBe(true);
+      expect(canUseBobinEntry("shipping")).toBe(false);
+    });
+
+    it("production plan management permission", () => {
+      expect(canManageProductionPlans("admin")).toBe(true);
+      expect(canManageProductionPlans("production")).toBe(true);
+      expect(canManageProductionPlans("sales")).toBe(false);
+    });
+
+    it("history and audit visibility", () => {
+      expect(canViewOrderHistory("admin", "Admin User")).toBe(true);
+      expect(canViewOrderHistory("sales", "Muhammed Yenibayrak")).toBe(true);
+      expect(canViewOrderHistory("sales", "Ayşe Demir")).toBe(false);
+      expect(canViewAuditTrail("admin")).toBe(true);
+      expect(canViewAuditTrail("sales")).toBe(true);
+      expect(canViewAuditTrail("accounting")).toBe(true);
+      expect(canViewAuditTrail("warehouse")).toBe(false);
+    });
+  });
+
+  describe("resolveRoleByIdentity", () => {
+    it("maps required people to expected roles", () => {
+      expect(resolveRoleByIdentity("warehouse", "Uğur Turgay")).toBe("warehouse");
+      expect(resolveRoleByIdentity("warehouse", "Turgut Yılmaz")).toBe("shipping");
+      expect(resolveRoleByIdentity("sales", "Esat Kaya")).toBe("production");
+      expect(resolveRoleByIdentity("sales", "Gökhan Demir")).toBe("production");
+      expect(resolveRoleByIdentity("shipping", "Mehmet Ali Çetin")).toBe("production");
+      expect(resolveRoleByIdentity("warehouse", "Harun Musa")).toBe("sales");
+      expect(resolveRoleByIdentity("sales", "Mustafa Özcan")).toBe("admin");
+      expect(resolveRoleByIdentity("production", "Muhammed Yenibayrak")).toBe("admin");
+    });
+
+    it("falls back to stored role when no override exists", () => {
+      expect(resolveRoleByIdentity("shipping", "Ayşe Demir")).toBe("shipping");
     });
   });
 

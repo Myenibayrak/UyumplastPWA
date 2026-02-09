@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { requireAuth, isAuthError } from "@/lib/auth/guards";
 import { stockUpdateSchema } from "@/lib/validations";
-import { canViewStock } from "@/lib/rbac";
+import { canEditStock, canViewStock } from "@/lib/rbac";
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireAuth();
   if (isAuthError(auth)) return auth;
-  if (!canViewStock(auth.role, auth.fullName) || (auth.role !== "admin" && auth.role !== "warehouse")) {
+  if (!canViewStock(auth.role, auth.fullName) || !canEditStock(auth.role)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 
@@ -71,7 +71,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireAuth();
   if (isAuthError(auth)) return auth;
-  if (!canViewStock(auth.role, auth.fullName) || (auth.role !== "admin" && auth.role !== "warehouse")) {
+  if (!canViewStock(auth.role, auth.fullName) || !canEditStock(auth.role)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 

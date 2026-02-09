@@ -1,18 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { TASK_STATUS_LABELS, PRIORITY_LABELS } from "@/lib/types";
-import type { WorkerTask, TaskStatus } from "@/lib/types";
-import { toast } from "@/hooks/use-toast";
+import type { WorkerTask } from "@/lib/types";
 
 interface TaskViewProps {
   tasks: WorkerTask[];
-  onUpdate: () => void;
 }
 
 const statusColor: Record<string, string> = {
@@ -31,18 +26,14 @@ const priorityColor: Record<string, string> = {
   urgent: "text-red-700 font-bold",
 };
 
-const ACTION_BUTTONS: { status: TaskStatus; label: string; color: string }[] = [
-  { status: "in_progress", label: "Başla", color: "bg-blue-600 hover:bg-blue-700 text-white" },
-  { status: "preparing", label: "Hazırlanıyor", color: "bg-yellow-600 hover:bg-yellow-700 text-white" },
-  { status: "ready", label: "Hazır", color: "bg-green-600 hover:bg-green-700 text-white" },
-  { status: "done", label: "Bitti", color: "bg-emerald-700 hover:bg-emerald-800 text-white" },
-];
+function getTrackingHint(department: string): string {
+  if (department === "warehouse") return "Detay/giriş: Depo Girişi";
+  if (department === "production") return "Detay/giriş: Bobin Girişi / Üretim Planları";
+  if (department === "shipping") return "Detay/giriş: Sevkiyat Programı";
+  return "Detay/giriş: ilgili operasyon menüsü";
+}
 
-export function TaskView({ tasks, onUpdate }: TaskViewProps) {
-  const [updating, setUpdating] = useState<string | null>(null);
-  const [quantities, setQuantities] = useState<Record<string, string>>({});
-  const [notes, setNotes] = useState<Record<string, string>>({});
-  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+export function TaskView({ tasks }: TaskViewProps) {
 
   const sortedTasks = useMemo(() => {
     const priorityRank: Record<string, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
@@ -64,31 +55,6 @@ export function TaskView({ tasks, onUpdate }: TaskViewProps) {
     return { urgent, overdue, active, done };
   }, [tasks]);
 
-  async function handleStatusChange(taskId: string, status: TaskStatus) {
-    setUpdating(taskId);
-    try {
-      const res = await fetch(`/api/tasks/${taskId}/progress`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status,
-          ready_quantity: quantities[taskId] ? Number(quantities[taskId]) : null,
-          progress_note: notes[taskId] || null,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Hata");
-      }
-      toast({ title: "Görev güncellendi" });
-      onUpdate();
-    } catch (err: unknown) {
-      toast({ title: "Hata", description: err instanceof Error ? err.message : "Bilinmeyen hata", variant: "destructive" });
-    } finally {
-      setUpdating(null);
-    }
-  }
-
   if (tasks.length === 0) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -109,7 +75,6 @@ export function TaskView({ tasks, onUpdate }: TaskViewProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {sortedTasks.map((task) => {
           const isOverdue = !!task.due_date && new Date(task.due_date).getTime() < Date.now() && task.status !== "done";
-          const isExpanded = expandedTaskId === task.id;
           return (
             <Card key={task.id} className={`border-2 ${statusColor[task.status] || ""} ${task.priority === "urgent" ? "ring-1 ring-red-300" : ""}`}>
               <CardHeader className="pb-3">
@@ -148,42 +113,11 @@ export function TaskView({ tasks, onUpdate }: TaskViewProps) {
                   <p className="text-sm text-muted-foreground bg-muted/50 p-2 rounded">{task.order_notes}</p>
                 )}
 
-                <div className="flex gap-2">
-                  {ACTION_BUTTONS.filter((btn) => btn.status !== task.status).map((btn) => (
-                    <Button
-                      key={btn.status}
-                      className={`h-9 text-sm font-semibold ${btn.color}`}
-                      disabled={updating === task.id}
-                      onClick={() => handleStatusChange(task.id, btn.status)}
-                    >
-                      {updating === task.id ? "..." : btn.label}
-                    </Button>
-                  ))}
-                  <Button
-                    variant="outline"
-                    className="h-9 text-sm"
-                    onClick={() => setExpandedTaskId((prev) => (prev === task.id ? null : task.id))}
-                  >
-                    {isExpanded ? "Güncellemeyi Gizle" : "Detaylı Güncelle"}
-                  </Button>
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-2">
+                  <p className="text-xs text-slate-600">
+                    Bu ekran sadece iş takibi içindir. {getTrackingHint(task.department)} menüsünden işlem yapılır.
+                  </p>
                 </div>
-
-                {isExpanded && (
-                  <div className="space-y-2 border-t pt-3">
-                    <Input
-                      type="number"
-                      placeholder="Hazır miktar (opsiyonel)"
-                      value={quantities[task.id] || ""}
-                      onChange={(e) => setQuantities((prev) => ({ ...prev, [task.id]: e.target.value }))}
-                    />
-                    <Textarea
-                      placeholder="İlerleme notu (opsiyonel)"
-                      value={notes[task.id] || ""}
-                      onChange={(e) => setNotes((prev) => ({ ...prev, [task.id]: e.target.value }))}
-                      className="min-h-[70px]"
-                    />
-                  </div>
-                )}
               </CardContent>
             </Card>
           );

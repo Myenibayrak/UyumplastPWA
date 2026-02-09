@@ -7,11 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { WorkerTask, AppRole } from "@/lib/types";
 import { ROLE_LABELS, TASK_STATUS_LABELS } from "@/lib/types";
-import { isWorkerRole } from "@/lib/rbac";
+import { isWorkerRole, resolveRoleByIdentity } from "@/lib/rbac";
 import { ClipboardList } from "lucide-react";
 
 interface AdminTask extends WorkerTask {
   assignee_name?: string | null;
+  assigned_by_name?: string | null;
   order_status?: string;
 }
 
@@ -40,8 +41,11 @@ export default function TasksPage() {
     const supabase = createClient();
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return;
-      const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-      if (profile) setRole(profile.role as AppRole);
+      const { data: profile } = await supabase.from("profiles").select("role, full_name").eq("id", user.id).single();
+      if (profile) {
+        const resolved = resolveRoleByIdentity(profile.role as AppRole, profile.full_name || "");
+        if (resolved) setRole(resolved);
+      }
     });
   }, []);
 
@@ -98,6 +102,7 @@ export default function TasksPage() {
                   <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Ürün</th>
                   <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Departman</th>
                   <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Atanan</th>
+                  <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Atayan</th>
                   <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Öncelik</th>
                   <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Durum</th>
                   <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">Termin</th>
@@ -114,6 +119,7 @@ export default function TasksPage() {
                       <Badge variant="outline">{ROLE_LABELS[task.department as AppRole] || task.department}</Badge>
                     </td>
                     <td className="px-3 py-2">{task.assignee_name || <span className="text-muted-foreground">Departman</span>}</td>
+                    <td className="px-3 py-2">{task.assigned_by_name || <span className="text-muted-foreground">—</span>}</td>
                     <td className="px-3 py-2">
                       <span className={task.priority === "urgent" ? "text-red-600 font-bold" : task.priority === "high" ? "text-orange-600 font-semibold" : ""}>
                         {task.priority === "urgent" ? "🔴 Acil" : task.priority === "high" ? "🟠 Yüksek" : task.priority === "normal" ? "Normal" : "Düşük"}
@@ -137,9 +143,12 @@ export default function TasksPage() {
   }
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-6">Görevlerim</h1>
-      <TaskView tasks={tasks} onUpdate={loadTasks} />
+    <div className="space-y-2">
+      <h1 className="text-2xl font-bold">Görevlerim</h1>
+      <p className="text-sm text-slate-500">
+        Bu ekran görev önceliği ve durum takibi içindir. Kg/bobin girişleri ilgili giriş ekranlarından yapılır.
+      </p>
+      <TaskView tasks={tasks} />
     </div>
   );
 }

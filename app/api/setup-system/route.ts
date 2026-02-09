@@ -360,6 +360,30 @@ CREATE TABLE IF NOT EXISTS public.order_tasks (
 ALTER TABLE public.order_tasks
   ADD COLUMN IF NOT EXISTS assigned_by uuid REFERENCES public.profiles(id);
 
+-- direct_messages (kullanicilar arasi mesajlasma)
+CREATE TABLE IF NOT EXISTS public.direct_messages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  sender_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  recipient_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  parent_id uuid REFERENCES public.direct_messages(id) ON DELETE SET NULL,
+  message text NOT NULL DEFAULT '',
+  read_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (sender_id <> recipient_id)
+);
+
+-- task_messages (gorev altinda mesajlasma)
+CREATE TABLE IF NOT EXISTS public.task_messages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id uuid NOT NULL REFERENCES public.order_tasks(id) ON DELETE CASCADE,
+  sender_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  parent_id uuid REFERENCES public.task_messages(id) ON DELETE SET NULL,
+  message text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- notifications
 CREATE TABLE IF NOT EXISTS public.notifications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -478,6 +502,23 @@ CREATE TABLE IF NOT EXISTS public.order_stock_entries (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- shipping_schedules (gunluk sevkiyat plani)
+CREATE TABLE IF NOT EXISTS public.shipping_schedules (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id uuid NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
+  scheduled_date date NOT NULL,
+  scheduled_time time,
+  sequence_no int NOT NULL DEFAULT 1,
+  status text NOT NULL DEFAULT 'planned',
+  notes text,
+  carry_count int NOT NULL DEFAULT 0,
+  created_by uuid REFERENCES public.profiles(id),
+  completed_by uuid REFERENCES public.profiles(id),
+  completed_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- stock_movements (stok hareketleri)
 CREATE TABLE IF NOT EXISTS public.stock_movements (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -503,6 +544,13 @@ CREATE INDEX IF NOT EXISTS idx_order_tasks_order_id ON public.order_tasks(order_
 CREATE INDEX IF NOT EXISTS idx_order_tasks_assigned_to ON public.order_tasks(assigned_to);
 CREATE INDEX IF NOT EXISTS idx_order_tasks_department ON public.order_tasks(department);
 CREATE INDEX IF NOT EXISTS idx_order_tasks_status ON public.order_tasks(status);
+CREATE INDEX IF NOT EXISTS idx_direct_messages_sender ON public.direct_messages(sender_id);
+CREATE INDEX IF NOT EXISTS idx_direct_messages_recipient ON public.direct_messages(recipient_id);
+CREATE INDEX IF NOT EXISTS idx_direct_messages_conversation ON public.direct_messages(sender_id, recipient_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_direct_messages_created_at ON public.direct_messages(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_task_messages_task_id ON public.task_messages(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_messages_sender_id ON public.task_messages(sender_id);
+CREATE INDEX IF NOT EXISTS idx_task_messages_parent_id ON public.task_messages(parent_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON public.notifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_read ON public.notifications(read);
 CREATE INDEX IF NOT EXISTS idx_definitions_category ON public.definitions(category);
@@ -521,6 +569,9 @@ CREATE INDEX IF NOT EXISTS idx_production_bobins_order_id ON public.production_b
 CREATE INDEX IF NOT EXISTS idx_production_bobins_plan_id ON public.production_bobins(cutting_plan_id);
 CREATE INDEX IF NOT EXISTS idx_production_bobins_status ON public.production_bobins(status);
 CREATE INDEX IF NOT EXISTS idx_order_stock_entries_order_id ON public.order_stock_entries(order_id);
+CREATE INDEX IF NOT EXISTS idx_shipping_schedules_date ON public.shipping_schedules(scheduled_date);
+CREATE INDEX IF NOT EXISTS idx_shipping_schedules_order_id ON public.shipping_schedules(order_id);
+CREATE INDEX IF NOT EXISTS idx_shipping_schedules_status ON public.shipping_schedules(status);
 CREATE INDEX IF NOT EXISTS idx_stock_movements_stock_item_id ON public.stock_movements(stock_item_id);
 CREATE INDEX IF NOT EXISTS idx_stock_movements_reference ON public.stock_movements(reference_type, reference_id);
 
@@ -537,6 +588,14 @@ CREATE TRIGGER trg_orders_updated BEFORE UPDATE ON public.orders
 
 DROP TRIGGER IF EXISTS trg_order_tasks_updated ON public.order_tasks;
 CREATE TRIGGER trg_order_tasks_updated BEFORE UPDATE ON public.order_tasks
+  FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
+
+DROP TRIGGER IF EXISTS trg_direct_messages_updated ON public.direct_messages;
+CREATE TRIGGER trg_direct_messages_updated BEFORE UPDATE ON public.direct_messages
+  FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
+
+DROP TRIGGER IF EXISTS trg_task_messages_updated ON public.task_messages;
+CREATE TRIGGER trg_task_messages_updated BEFORE UPDATE ON public.task_messages
   FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
 
 -- order number generator
@@ -655,6 +714,10 @@ DROP TRIGGER IF EXISTS trg_order_stock_entries_updated ON public.order_stock_ent
 CREATE TRIGGER trg_order_stock_entries_updated BEFORE UPDATE ON public.order_stock_entries
   FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
 
+DROP TRIGGER IF EXISTS trg_shipping_schedules_updated ON public.shipping_schedules;
+CREATE TRIGGER trg_shipping_schedules_updated BEFORE UPDATE ON public.shipping_schedules
+  FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
+
 -- Production bobin ready trigger
 DROP TRIGGER IF EXISTS trg_production_bobin_ready ON public.production_bobins;
 CREATE TRIGGER trg_production_bobin_ready AFTER INSERT OR UPDATE OR DELETE ON public.production_bobins
@@ -670,6 +733,8 @@ CREATE TRIGGER trg_order_stock_entry_ready AFTER INSERT OR UPDATE OR DELETE ON p
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.order_tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.direct_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.task_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.definitions ENABLE ROW LEVEL SECURITY;
@@ -685,6 +750,7 @@ ALTER TABLE public.cutting_plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cutting_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.production_bobins ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.order_stock_entries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.shipping_schedules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.stock_movements ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies for idempotency
@@ -707,7 +773,7 @@ CREATE POLICY oms_profiles_update ON public.profiles FOR UPDATE TO authenticated
 -- orders policies
 CREATE POLICY oms_orders_select ON public.orders FOR SELECT TO authenticated
   USING (
-    public.has_any_role(ARRAY['admin','sales','accounting','warehouse','shipping']::public.app_role[])
+    public.has_any_role(ARRAY['admin','sales','accounting','warehouse','shipping','production']::public.app_role[])
     OR id IN (SELECT order_id FROM public.order_tasks WHERE assigned_to = auth.uid() OR department = (SELECT role FROM public.profiles WHERE id = auth.uid()))
   );
 CREATE POLICY oms_orders_insert ON public.orders FOR INSERT TO authenticated
@@ -733,6 +799,67 @@ CREATE POLICY oms_tasks_update ON public.order_tasks FOR UPDATE TO authenticated
     OR department = (SELECT role FROM public.profiles WHERE id = auth.uid())
   );
 
+-- direct_messages policies
+CREATE POLICY oms_direct_messages_select ON public.direct_messages FOR SELECT TO authenticated
+  USING (sender_id = auth.uid() OR recipient_id = auth.uid());
+CREATE POLICY oms_direct_messages_insert ON public.direct_messages FOR INSERT TO authenticated
+  WITH CHECK (
+    sender_id = auth.uid()
+    AND recipient_id <> auth.uid()
+  );
+CREATE POLICY oms_direct_messages_update ON public.direct_messages FOR UPDATE TO authenticated
+  USING (sender_id = auth.uid() OR recipient_id = auth.uid());
+CREATE POLICY oms_direct_messages_delete ON public.direct_messages FOR DELETE TO authenticated
+  USING (sender_id = auth.uid() OR recipient_id = auth.uid());
+
+-- task_messages policies
+CREATE POLICY oms_task_messages_select ON public.task_messages FOR SELECT TO authenticated
+  USING (
+    public.has_any_role(ARRAY['admin','sales','accounting']::public.app_role[])
+    OR sender_id = auth.uid()
+    OR EXISTS (
+      SELECT 1
+      FROM public.order_tasks t
+      JOIN public.orders o ON o.id = t.order_id
+      WHERE t.id = task_id
+        AND (
+          t.assigned_to = auth.uid()
+          OR t.assigned_by = auth.uid()
+          OR t.department = (SELECT role FROM public.profiles WHERE id = auth.uid())
+          OR o.created_by = auth.uid()
+        )
+    )
+  );
+CREATE POLICY oms_task_messages_insert ON public.task_messages FOR INSERT TO authenticated
+  WITH CHECK (
+    sender_id = auth.uid()
+    AND (
+      public.has_any_role(ARRAY['admin','sales','accounting']::public.app_role[])
+      OR EXISTS (
+        SELECT 1
+        FROM public.order_tasks t
+        JOIN public.orders o ON o.id = t.order_id
+        WHERE t.id = task_id
+          AND (
+            t.assigned_to = auth.uid()
+            OR t.assigned_by = auth.uid()
+            OR t.department = (SELECT role FROM public.profiles WHERE id = auth.uid())
+            OR o.created_by = auth.uid()
+          )
+      )
+    )
+  );
+CREATE POLICY oms_task_messages_update ON public.task_messages FOR UPDATE TO authenticated
+  USING (
+    sender_id = auth.uid()
+    OR public.has_any_role(ARRAY['admin','sales','accounting']::public.app_role[])
+  );
+CREATE POLICY oms_task_messages_delete ON public.task_messages FOR DELETE TO authenticated
+  USING (
+    sender_id = auth.uid()
+    OR public.has_any_role(ARRAY['admin','sales','accounting']::public.app_role[])
+  );
+
 -- notifications policies
 CREATE POLICY oms_notif_select ON public.notifications FOR SELECT TO authenticated
   USING (user_id = auth.uid());
@@ -743,7 +870,7 @@ CREATE POLICY oms_notif_insert ON public.notifications FOR INSERT TO authenticat
 
 -- audit_logs policies
 CREATE POLICY oms_audit_select ON public.audit_logs FOR SELECT TO authenticated
-  USING (public.has_any_role(ARRAY['admin']::public.app_role[]));
+  USING (public.has_any_role(ARRAY['admin','sales','accounting']::public.app_role[]));
 CREATE POLICY oms_audit_insert ON public.audit_logs FOR INSERT TO authenticated
   WITH CHECK (true);
 
@@ -784,7 +911,7 @@ CREATE POLICY oms_feature_flags_manage ON public.feature_flags FOR ALL TO authen
 -- stock_items policies
 CREATE POLICY oms_stock_items_select ON public.stock_items FOR SELECT TO authenticated USING (true);
 CREATE POLICY oms_stock_items_insert ON public.stock_items FOR INSERT TO authenticated
-  WITH CHECK (public.has_any_role(ARRAY['admin','warehouse']::public.app_role[]));
+  WITH CHECK (public.has_any_role(ARRAY['admin','warehouse','accounting']::public.app_role[]));
 CREATE POLICY oms_stock_items_update ON public.stock_items FOR UPDATE TO authenticated
   USING (public.has_any_role(ARRAY['admin','warehouse']::public.app_role[]));
 CREATE POLICY oms_stock_items_delete ON public.stock_items FOR DELETE TO authenticated
@@ -819,6 +946,20 @@ CREATE POLICY oms_order_stock_entries_insert ON public.order_stock_entries FOR I
   WITH CHECK (public.has_any_role(ARRAY['admin','warehouse']::public.app_role[]));
 CREATE POLICY oms_order_stock_entries_delete ON public.order_stock_entries FOR DELETE TO authenticated
   USING (public.has_any_role(ARRAY['admin','warehouse']::public.app_role[]));
+
+-- shipping_schedules policies
+CREATE POLICY oms_shipping_schedules_select ON public.shipping_schedules FOR SELECT TO authenticated
+  USING (
+    public.has_any_role(ARRAY['admin','sales','shipping','production']::public.app_role[])
+    OR created_by = auth.uid()
+    OR completed_by = auth.uid()
+  );
+CREATE POLICY oms_shipping_schedules_insert ON public.shipping_schedules FOR INSERT TO authenticated
+  WITH CHECK (public.has_any_role(ARRAY['admin','sales','production']::public.app_role[]));
+CREATE POLICY oms_shipping_schedules_update ON public.shipping_schedules FOR UPDATE TO authenticated
+  USING (public.has_any_role(ARRAY['admin','sales','shipping','production']::public.app_role[]));
+CREATE POLICY oms_shipping_schedules_delete ON public.shipping_schedules FOR DELETE TO authenticated
+  USING (public.has_any_role(ARRAY['admin','sales','production']::public.app_role[]));
 
 -- stock_movements policies
 CREATE POLICY oms_stock_movements_select ON public.stock_movements FOR SELECT TO authenticated USING (true);
@@ -895,11 +1036,13 @@ ON CONFLICT (flag) DO NOTHING;
 INSERT INTO public.role_permissions (role, permission, allowed) VALUES
   ('admin', 'manage_orders', true),
   ('admin', 'manage_tasks', true),
+  ('admin', 'manage_shipping_schedule', true),
   ('admin', 'manage_settings', true),
   ('admin', 'view_finance', true),
   ('admin', 'manage_users', true),
   ('sales', 'manage_orders', true),
   ('sales', 'manage_tasks', true),
+  ('sales', 'manage_shipping_schedule', true),
   ('sales', 'view_finance', true),
   ('accounting', 'view_orders', true),
   ('accounting', 'view_finance', true),
@@ -907,11 +1050,13 @@ INSERT INTO public.role_permissions (role, permission, allowed) VALUES
   ('warehouse', 'update_own_tasks', true),
   ('production', 'view_own_tasks', true),
   ('production', 'update_own_tasks', true),
+  ('production', 'manage_shipping_schedule', true),
   ('shipping', 'view_own_tasks', true),
-  ('shipping', 'update_own_tasks', true)
+  ('shipping', 'update_own_tasks', true),
+  ('shipping', 'complete_shipping_schedule', true)
 ON CONFLICT (role, permission) DO NOTHING;
 
--- Enable realtime for notifications and order_tasks
+-- Enable realtime for notifications, tasks and message streams
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -931,6 +1076,30 @@ BEGIN
     WHERE pubname = 'supabase_realtime' AND tablename = 'order_tasks'
   ) THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.order_tasks;
+  END IF;
+EXCEPTION WHEN undefined_object THEN
+  NULL;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'direct_messages'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.direct_messages;
+  END IF;
+EXCEPTION WHEN undefined_object THEN
+  NULL;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'task_messages'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.task_messages;
   END IF;
 EXCEPTION WHEN undefined_object THEN
   NULL;

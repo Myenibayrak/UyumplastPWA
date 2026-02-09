@@ -23,7 +23,8 @@ export async function GET(request: NextRequest) {
     .select(`
       *,
       order:orders!inner(order_no, customer, product_type, micron, width, quantity, unit, trim_width, ship_date, priority, notes, status),
-      assignee:profiles!order_tasks_assigned_to_fkey(id, full_name, role)
+      assignee:profiles!order_tasks_assigned_to_fkey(id, full_name, role),
+      assigner:profiles!order_tasks_assigned_by_fkey(id, full_name, role)
     `)
     .order("created_at", { ascending: false });
 
@@ -31,7 +32,23 @@ export async function GET(request: NextRequest) {
     query = query.eq("department", deptFilter);
   }
 
-  const { data, error } = await query;
+  let { data, error } = await query;
+  if (error && /assigned_by|order_tasks_assigned_by_fkey/i.test(error.message || "")) {
+    let fallbackQuery = supabase
+      .from("order_tasks")
+      .select(`
+        *,
+        order:orders!inner(order_no, customer, product_type, micron, width, quantity, unit, trim_width, ship_date, priority, notes, status),
+        assignee:profiles!order_tasks_assigned_to_fkey(id, full_name, role)
+      `)
+      .order("created_at", { ascending: false });
+    if (deptFilter && deptFilter !== "all") {
+      fallbackQuery = fallbackQuery.eq("department", deptFilter);
+    }
+    const retry = await fallbackQuery;
+    data = retry.data;
+    error = retry.error;
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const tasks = (data ?? []).map((t) => {
@@ -51,6 +68,7 @@ export async function GET(request: NextRequest) {
       order_notes: o?.notes ?? null,
       order_status: o?.status ?? "draft",
       assignee_name: (t.assignee as Record<string, unknown> | null)?.full_name ?? null,
+      assigned_by_name: (t.assigner as Record<string, unknown> | null)?.full_name ?? null,
     };
   });
 

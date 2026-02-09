@@ -29,6 +29,7 @@ export const taskAssignSchema = z.object({
   assigned_to: z.string().uuid().nullable().optional(),
   priority: z.enum(["low", "normal", "high", "urgent"]).default("normal"),
   due_date: z.string().nullable().optional(),
+  message: z.string().max(2000, "Görev mesajı çok uzun").nullable().optional(),
 });
 
 export const taskProgressSchema = z.object({
@@ -80,6 +81,40 @@ export const stockCreateSchema = z.object({
 
 export const stockUpdateSchema = stockCreateSchema.partial();
 
+export const orderNudgeSchema = z.object({
+  target_user_id: z.string().uuid("Geçerli hedef kullanıcı seçin"),
+  message: z.string().min(3, "Mesaj en az 3 karakter olmalı").max(500, "Mesaj çok uzun"),
+});
+
+export const shippingScheduleCreateSchema = z.object({
+  order_id: z.string().uuid(),
+  scheduled_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Tarih YYYY-MM-DD olmalı"),
+  scheduled_time: z.string().regex(/^\d{2}:\d{2}$/, "Saat HH:MM olmalı").nullable().optional(),
+  sequence_no: z.number().int().min(1).max(500).default(1),
+  notes: z.string().nullable().optional(),
+});
+
+export const shippingScheduleUpdateSchema = z.object({
+  scheduled_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Tarih YYYY-MM-DD olmalı").optional(),
+  scheduled_time: z.string().regex(/^\d{2}:\d{2}$/, "Saat HH:MM olmalı").nullable().optional(),
+  sequence_no: z.number().int().min(1).max(500).optional(),
+  status: z.enum(["planned", "completed", "cancelled"]).optional(),
+  notes: z.string().nullable().optional(),
+}).refine((val) => Object.keys(val).length > 0, {
+  message: "En az bir güncelleme alanı gönderilmeli",
+});
+
+export const directMessageCreateSchema = z.object({
+  recipient_id: z.string().uuid("Geçerli kullanıcı seçin"),
+  message: z.string().min(1, "Mesaj boş olamaz").max(2000, "Mesaj çok uzun"),
+  parent_id: z.string().uuid().nullable().optional(),
+});
+
+export const taskMessageCreateSchema = z.object({
+  message: z.string().min(1, "Mesaj boş olamaz").max(2000, "Mesaj çok uzun"),
+  parent_id: z.string().uuid().nullable().optional(),
+});
+
 export type StockCreateInput = z.infer<typeof stockCreateSchema>;
 export type StockUpdateInput = z.infer<typeof stockUpdateSchema>;
 
@@ -89,3 +124,8 @@ export type TaskAssignInput = z.infer<typeof taskAssignSchema>;
 export type TaskProgressInput = z.infer<typeof taskProgressSchema>;
 export type CuttingPlanCreateInput = z.infer<typeof cuttingPlanCreateSchema>;
 export type CuttingPlanUpdateInput = z.infer<typeof cuttingPlanUpdateSchema>;
+export type OrderNudgeInput = z.infer<typeof orderNudgeSchema>;
+export type ShippingScheduleCreateInput = z.infer<typeof shippingScheduleCreateSchema>;
+export type ShippingScheduleUpdateInput = z.infer<typeof shippingScheduleUpdateSchema>;
+export type DirectMessageCreateInput = z.infer<typeof directMessageCreateSchema>;
+export type TaskMessageCreateInput = z.infer<typeof taskMessageCreateSchema>;

@@ -2,8 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, requireRole, isAuthError } from "@/lib/auth/guards";
 import { PRODUCTION_READY_STATUSES } from "@/lib/production-ready";
+import { calculateReadyMetrics, deriveOrderStatusFromReady } from "@/lib/order-ready";
 
 async function recalculateProductionReadyKg(supabase: ReturnType<typeof createAdminClient>, orderId: string) {
+  const { data: order, error: orderError } = await supabase
+    .from("orders")
+    .select("id, quantity, status, source_type, stock_ready_kg")
+    .eq("id", orderId)
+    .single();
+  if (orderError || !order) return;
+
   const { data: rows } = await supabase
     .from("production_bobins")
     .select("kg")
@@ -11,7 +19,15 @@ async function recalculateProductionReadyKg(supabase: ReturnType<typeof createAd
     .in("status", [...PRODUCTION_READY_STATUSES]);
 
   const totalKg = (rows ?? []).reduce((sum: number, r: { kg: number }) => sum + Number(r.kg || 0), 0);
-  await supabase.from("orders").update({ production_ready_kg: totalKg }).eq("id", orderId);
+  const metrics = calculateReadyMetrics(order.quantity, order.stock_ready_kg, totalKg);
+  const nextStatus = deriveOrderStatusFromReady(order.status, order.source_type, metrics.isReady);
+
+  const updateData: Record<string, unknown> = { production_ready_kg: totalKg };
+  if (nextStatus && nextStatus !== order.status) {
+    updateData.status = nextStatus;
+  }
+
+  await supabase.from("orders").update(updateData).eq("id", orderId);
 }
 
 export async function GET(request: NextRequest) {
@@ -71,12 +87,21 @@ export async function POST(request: NextRequest) {
 
   const supabase = createAdminClient();
 
-  // Get order info for automatic fields
-  const { data: order } = await supabase
+  // Get order info for automatic fields and enforce source/status constraints.
+  const { data: order, error: orderError } = await supabase
     .from("orders")
-    .select("product_type, micron, width")
+    .select("id, product_type, micron, width, status, source_type")
     .eq("id", body.order_id)
     .single();
+  if (orderError || !order) {
+    return NextResponse.json({ error: orderError?.message || "Sipariş bulunamadı" }, { status: 404 });
+  }
+  if (order.source_type === "stock") {
+    return NextResponse.json({ error: "Bu sipariş için üretim bobini girişi yapılamaz" }, { status: 400 });
+  }
+  if (["shipped", "delivered", "cancelled", "closed"].includes(String(order.status))) {
+    return NextResponse.json({ error: "Bu sipariş için üretim bobini girişi yapılamaz" }, { status: 400 });
+  }
 
   const bobinData = {
     order_id: body.order_id,

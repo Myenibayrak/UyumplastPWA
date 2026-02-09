@@ -7,24 +7,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import type { Order, AppRole, Profile } from "@/lib/types";
-import { canViewFinance, canManageOrders, isWorkerRole } from "@/lib/rbac";
+import { canCloseOrders, canManageOrders, canSendOrderNudge, canViewFinance, canViewOrderHistory, isWorkerRole, resolveRoleByIdentity } from "@/lib/rbac";
 import { ORDER_STATUS_LABELS, SOURCE_TYPE_ICONS } from "@/lib/types";
 import { toast } from "@/hooks/use-toast";
 import { Plus, Search } from "lucide-react";
-
-function normalizeTurkishName(value: string) {
-  return value
-    .toLocaleLowerCase("tr-TR")
-    .replace(/ı/g, "i")
-    .replace(/ğ/g, "g")
-    .replace(/ü/g, "u")
-    .replace(/ş/g, "s")
-    .replace(/ö/g, "o")
-    .replace(/ç/g, "c");
-}
 
 export default function OrdersPage() {
   const [allOrders, setAllOrders] = useState<Order[]>([]);
@@ -35,11 +25,17 @@ export default function OrdersPage() {
   const [editOrder, setEditOrder] = useState<Order | null>(null);
   const [taskDialogOrder, setTaskDialogOrder] = useState<Order | null>(null);
   const [workers, setWorkers] = useState<Profile[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [taskDept, setTaskDept] = useState<string>("warehouse");
   const [taskAssignee, setTaskAssignee] = useState<string>("");
   const [taskPriority, setTaskPriority] = useState<string>("normal");
   const [taskDueDate, setTaskDueDate] = useState<string>("");
+  const [taskMessage, setTaskMessage] = useState<string>("");
   const [taskLoading, setTaskLoading] = useState(false);
+  const [nudgeDialogOrder, setNudgeDialogOrder] = useState<Order | null>(null);
+  const [nudgeTargetUserId, setNudgeTargetUserId] = useState<string>("");
+  const [nudgeMessage, setNudgeMessage] = useState("");
+  const [nudgeLoading, setNudgeLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
@@ -61,26 +57,27 @@ export default function OrdersPage() {
       if (!user) return;
       const { data: profile } = await supabase.from("profiles").select("role, full_name").eq("id", user.id).single();
       if (profile) {
-        setRole(profile.role as AppRole);
+        const resolved = resolveRoleByIdentity(profile.role as AppRole, profile.full_name || "");
+        if (resolved) setRole(resolved);
         setUserName(profile.full_name || "");
       }
     });
-    supabase.from("profiles").select("*").in("role", ["warehouse", "production", "shipping"]).then(({ data }) => {
-      if (data) setWorkers(data as Profile[]);
+    supabase.from("profiles").select("*").then(({ data }) => {
+      if (data) {
+        const allProfiles = data as Profile[];
+        setProfiles(allProfiles);
+        setWorkers(allProfiles.filter((p) => ["warehouse", "production", "shipping"].includes(p.role)));
+      }
     });
     loadOrders();
   }, [loadOrders]);
 
-  const canClose = role === "accounting" || role === "admin";
+  const canClose = canCloseOrders(role);
   const isManager = role ? canManageOrders(role) : false;
+  const canNudge = role ? canSendOrderNudge(role, userName) : false;
   const isWorker = role ? isWorkerRole(role) : false;
   const showFinance = role ? canViewFinance(role) : false;
-  const canViewHistory = useMemo(() => {
-    if (role === "admin" || role === "accounting") return true;
-    const normalized = normalizeTurkishName(userName || "");
-    const tokens = normalized.split(/\s+/).filter(Boolean);
-    return tokens.some((token) => ["mustafa", "muhammed", "admin", "imren"].includes(token));
-  }, [role, userName]);
+  const canViewHistory = useMemo(() => canViewOrderHistory(role, userName), [role, userName]);
 
   useEffect(() => {
     if (!canViewHistory && activeTab === "history") {
@@ -145,6 +142,7 @@ export default function OrdersPage() {
           assigned_to: taskAssignee || null,
           priority: taskPriority,
           due_date: taskDueDate || null,
+          message: taskMessage || null,
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Hata");
@@ -154,9 +152,43 @@ export default function OrdersPage() {
       setTaskAssignee("");
       setTaskPriority("normal");
       setTaskDueDate("");
+      setTaskMessage("");
     } catch (err: unknown) {
       toast({ title: "Hata", description: err instanceof Error ? err.message : "Bilinmeyen", variant: "destructive" });
     } finally { setTaskLoading(false); }
+  }
+
+  async function handleSendNudge() {
+    if (!nudgeDialogOrder) return;
+    if (!nudgeTargetUserId) {
+      toast({ title: "Hedef kullanıcı seçin", variant: "destructive" });
+      return;
+    }
+    if (nudgeMessage.trim().length < 3) {
+      toast({ title: "Mesaj en az 3 karakter olmalı", variant: "destructive" });
+      return;
+    }
+
+    setNudgeLoading(true);
+    try {
+      const res = await fetch(`/api/orders/${nudgeDialogOrder.id}/nudge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target_user_id: nudgeTargetUserId,
+          message: nudgeMessage.trim(),
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Mesaj gönderilemedi");
+      toast({ title: "Dürtme mesajı gönderildi" });
+      setNudgeDialogOrder(null);
+      setNudgeTargetUserId("");
+      setNudgeMessage("");
+    } catch (err: unknown) {
+      toast({ title: "Hata", description: err instanceof Error ? err.message : "Bilinmeyen hata", variant: "destructive" });
+    } finally {
+      setNudgeLoading(false);
+    }
   }
 
   async function closeOrder(order: Order) {
@@ -402,6 +434,20 @@ export default function OrdersPage() {
                                 Görev
                               </Button>
                             )}
+                            {canNudge && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs"
+                                onClick={() => {
+                                  setNudgeDialogOrder(order);
+                                  setNudgeTargetUserId("");
+                                  setNudgeMessage("");
+                                }}
+                              >
+                                Dürt
+                              </Button>
+                            )}
                             {canClose && order.status !== "closed" && order.status !== "cancelled" && (
                               <Button
                                 variant="outline"
@@ -434,7 +480,7 @@ export default function OrdersPage() {
       />
 
       {/* Task Assign Dialog */}
-      <Dialog open={!!taskDialogOrder} onOpenChange={(v) => { if (!v) setTaskDialogOrder(null); }}>
+      <Dialog open={!!taskDialogOrder} onOpenChange={(v) => { if (!v) { setTaskDialogOrder(null); setTaskMessage(""); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Görev Ata — {taskDialogOrder?.order_no}</DialogTitle>
@@ -479,8 +525,50 @@ export default function OrdersPage() {
               <Label>Termin Tarihi</Label>
               <Input type="date" value={taskDueDate} onChange={(e) => setTaskDueDate(e.target.value)} />
             </div>
+            <div className="space-y-2">
+              <Label>Görev Mesajı (opsiyonel)</Label>
+              <Textarea value={taskMessage} onChange={(e) => setTaskMessage(e.target.value)} placeholder="Görev detayını yazın..." />
+            </div>
             <Button className="w-full" onClick={handleAssignTask} disabled={taskLoading}>
               {taskLoading ? "Atanıyor..." : "Görevi Ata"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!nudgeDialogOrder} onOpenChange={(v) => { if (!v) setNudgeDialogOrder(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Dürtme Mesajı — {nudgeDialogOrder?.order_no}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Hedef Kullanıcı</Label>
+              <Select value={nudgeTargetUserId || "__none__"} onValueChange={(v) => setNudgeTargetUserId(v === "__none__" ? "" : v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Kullanıcı seçin..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Seçin</SelectItem>
+                  {profiles.map((profile) => (
+                    <SelectItem key={profile.id} value={profile.id}>
+                      {profile.full_name} ({profile.role})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Mesaj</Label>
+              <Textarea
+                value={nudgeMessage}
+                onChange={(e) => setNudgeMessage(e.target.value)}
+                placeholder="Sipariş için kısa hatırlatma notu..."
+                className="min-h-[90px]"
+              />
+            </div>
+            <Button className="w-full" onClick={handleSendNudge} disabled={nudgeLoading}>
+              {nudgeLoading ? "Gönderiliyor..." : "Mesaj Gönder"}
             </Button>
           </div>
         </DialogContent>

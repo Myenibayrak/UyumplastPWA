@@ -1,10 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const singleMock = vi.fn();
-const selectMock = vi.fn(() => ({ single: singleMock }));
-const eqMock = vi.fn(() => ({ select: selectMock }));
-const updateMock = vi.fn(() => ({ eq: eqMock }));
-const fromMock = vi.fn(() => ({ update: updateMock }));
+const beforeSingleMock = vi.fn();
+const beforeEqMock = vi.fn(() => ({ single: beforeSingleMock }));
+const beforeSelectMock = vi.fn(() => ({ eq: beforeEqMock }));
+
+const updateSingleMock = vi.fn();
+const updateSelectMock = vi.fn(() => ({ single: updateSingleMock }));
+const updateEqMock = vi.fn(() => ({ select: updateSelectMock }));
+const updateMock = vi.fn(() => ({ eq: updateEqMock }));
+
+const auditInsertMock = vi.fn().mockResolvedValue({ data: null, error: null });
+const fromMock = vi.fn((table: string) => {
+  if (table === "orders") {
+    return { select: beforeSelectMock, update: updateMock };
+  }
+  if (table === "audit_logs") {
+    return { insert: auditInsertMock };
+  }
+  return {};
+});
 
 vi.mock("@/lib/auth/guards", () => ({
   requireAuth: vi.fn(async () => ({ userId: "user-1", role: "accounting" })),
@@ -20,12 +34,19 @@ vi.mock("@/lib/supabase/admin", () => ({
 
 describe("Orders PATCH Closed Fallback", () => {
   beforeEach(() => {
-    singleMock.mockReset();
+    beforeSingleMock.mockReset();
+    updateSingleMock.mockReset();
     fromMock.mockClear();
+    auditInsertMock.mockClear();
   });
 
   it("falls back to cancelled when closed enum is missing in DB", async () => {
-    singleMock
+    beforeSingleMock.mockResolvedValue({
+      data: { id: "order-1", status: "draft" },
+      error: null,
+    });
+
+    updateSingleMock
       .mockResolvedValueOnce({
         data: null,
         error: { message: "invalid input value for enum order_status: \"closed\"" },
@@ -47,6 +68,6 @@ describe("Orders PATCH Closed Fallback", () => {
 
     expect(res.status).toBe(200);
     expect(body.status).toBe("cancelled");
-    expect(singleMock).toHaveBeenCalledTimes(2);
+    expect(updateSingleMock).toHaveBeenCalledTimes(2);
   });
 });

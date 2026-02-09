@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import type { ProductionBobin, Order, CuttingPlan } from "@/lib/types";
+import type { ProductionBobin, Order, CuttingPlan, AppRole } from "@/lib/types";
 import { isProductionReadyStatus } from "@/lib/production-ready";
+import { canUseBobinEntry, resolveRoleByIdentity } from "@/lib/rbac";
 import { toast } from "@/hooks/use-toast";
 import { CheckCircle, Clock, Package } from "lucide-react";
 
@@ -17,9 +18,12 @@ type CuttingPlanWithMetrics = CuttingPlan & {
 
 export default function BobinEntryPage() {
   const [activePlans, setActivePlans] = useState<CuttingPlanWithMetrics[]>([]);
+  const [role, setRole] = useState<AppRole | null>(null);
+  const [profileLoaded, setProfileLoaded] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<CuttingPlanWithMetrics | null>(null);
   const [todayBobins, setTodayBobins] = useState<ProductionBobin[]>([]);
   const [loading, setLoading] = useState(false);
+  const canUsePage = canUseBobinEntry(role);
 
   // Form fields (manuel - sarı)
   const [bobbinNo, setBobbinNo] = useState("");
@@ -30,6 +34,12 @@ export default function BobinEntryPage() {
 
   // Load cutting plans and today's bobins
   const loadData = useCallback(async () => {
+    if (!canUsePage) {
+      setActivePlans([]);
+      setTodayBobins([]);
+      return;
+    }
+
     const supabase = createClient();
 
     // Load active cutting plans
@@ -54,11 +64,27 @@ export default function BobinEntryPage() {
       .order("entered_at", { ascending: false });
 
     if (bobins) setTodayBobins(bobins as ProductionBobin[]);
+  }, [canUsePage]);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) {
+        setProfileLoaded(true);
+        return;
+      }
+      const { data: profile } = await supabase.from("profiles").select("role, full_name").eq("id", user.id).single();
+      if (profile) {
+        const resolved = resolveRoleByIdentity(profile.role as AppRole, profile.full_name || "");
+        if (resolved) setRole(resolved);
+      }
+      setProfileLoaded(true);
+    });
   }, []);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (profileLoaded && canUsePage) loadData();
+  }, [profileLoaded, canUsePage, loadData]);
 
   // Auto-generate bobbin number
   useEffect(() => {
@@ -71,6 +97,10 @@ export default function BobinEntryPage() {
   }, [bobbinNo, todayBobins]);
 
   async function handleSubmit() {
+    if (!canUsePage) {
+      toast({ title: "Yetkiniz yok", variant: "destructive" });
+      return;
+    }
     if (!selectedPlan || !bobbinNo || !meter || !kg) {
       toast({ title: "Hata", description: "Lütfen plan, bobin no, metre ve kilo girin.", variant: "destructive" });
       return;
@@ -123,6 +153,23 @@ export default function BobinEntryPage() {
     return (plan.produced_bobins ?? [])
       .filter((b) => isProductionReadyStatus(b.status))
       .reduce((sum, b) => sum + Number(b.kg || 0), 0);
+  }
+
+  if (!profileLoaded) {
+    return (
+      <div className="max-w-3xl mx-auto bg-white rounded-lg border border-slate-200 p-8 text-center">
+        <p className="text-sm text-slate-500">Yükleniyor...</p>
+      </div>
+    );
+  }
+
+  if (!canUsePage) {
+    return (
+      <div className="max-w-3xl mx-auto bg-white rounded-lg border border-slate-200 p-8 text-center">
+        <h1 className="text-xl font-semibold text-slate-900 mb-2">Bobin Girişi Yetkisi Yok</h1>
+        <p className="text-sm text-slate-600">Bu ekran sadece Üretim ve Yönetici rolleri için açıktır.</p>
+      </div>
+    );
   }
 
   return (

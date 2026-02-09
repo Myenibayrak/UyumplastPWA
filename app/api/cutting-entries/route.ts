@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, requireRole, isAuthError } from "@/lib/auth/guards";
+import { calculateReadyMetrics, deriveOrderStatusFromReady } from "@/lib/order-ready";
 
 export async function POST(request: NextRequest) {
   const auth = await requireAuth();
@@ -128,13 +129,20 @@ export async function POST(request: NextRequest) {
   if (plan.source_stock_id && sourceStockSnapshot) {
     const newKg = sourceStockSnapshot.kg - cutKg;
     const newQty = newKg <= 0 ? 0 : sourceStockSnapshot.quantity;
-    const { error: stockUpdateError } = await supabase
+    const { data: updatedSource, error: stockUpdateError } = await supabase
       .from("stock_items")
       .update({ kg: newKg, quantity: newQty })
-      .eq("id", plan.source_stock_id);
+      .eq("id", plan.source_stock_id)
+      .gte("kg", cutKg)
+      .select("id")
+      .maybeSingle();
     if (stockUpdateError) {
       await rollbackEntry();
       return NextResponse.json({ error: stockUpdateError.message }, { status: 500 });
+    }
+    if (!updatedSource) {
+      await rollbackEntry();
+      return NextResponse.json({ error: "Stok miktarı değişti, lütfen tekrar deneyin" }, { status: 409 });
     }
     sourceAdjusted = true;
 
@@ -157,20 +165,39 @@ export async function POST(request: NextRequest) {
     sourceMovementLogged = true;
   }
 
-  // If it's an order piece, add to order's ready_quantity
+  // If it's an order piece, update order's production_ready_kg and status.
   if (entryData.is_order_piece) {
-    const { data: orderEntries } = await supabase
+    const { data: orderEntries, error: orderEntriesError } = await supabase
       .from("cutting_entries")
       .select("cut_kg")
       .eq("order_id", plan.order_id)
       .eq("is_order_piece", true);
+    if (orderEntriesError) {
+      warnings.push(`Üretim hazır kg hesaplanamadı: ${orderEntriesError.message}`);
+    } else {
+      const { data: order, error: orderError } = await supabase
+        .from("orders")
+        .select("quantity, status, source_type, stock_ready_kg")
+        .eq("id", plan.order_id)
+        .single();
+      if (orderError || !order) {
+        warnings.push(`Sipariş hazır durumu güncellenemedi: ${orderError?.message || "Sipariş bulunamadı"}`);
+      } else {
+        const totalProductionKg = (orderEntries ?? []).reduce((s: number, e: { cut_kg: number }) => s + Number(e.cut_kg || 0), 0);
+        const metrics = calculateReadyMetrics(order.quantity, order.stock_ready_kg, totalProductionKg);
+        const nextStatus = deriveOrderStatusFromReady(order.status, order.source_type, metrics.isReady);
+        const updateData: Record<string, unknown> = { production_ready_kg: totalProductionKg };
+        if (nextStatus && nextStatus !== order.status) {
+          updateData.status = nextStatus;
+        }
 
-    const totalReady = (orderEntries ?? []).reduce((s: number, e: { cut_kg: number }) => s + e.cut_kg, 0);
-    const { error: orderReadyUpdateError } = await supabase
-      .from("orders")
-      .update({ ready_quantity: totalReady })
-      .eq("id", plan.order_id);
-    if (orderReadyUpdateError) warnings.push(`ready_quantity güncellenemedi: ${orderReadyUpdateError.message}`);
+        const { error: orderReadyUpdateError } = await supabase
+          .from("orders")
+          .update(updateData)
+          .eq("id", plan.order_id);
+        if (orderReadyUpdateError) warnings.push(`production_ready_kg güncellenemedi: ${orderReadyUpdateError.message}`);
+      }
+    }
   }
 
   // If it's a leftover piece (not for order), add to stock
