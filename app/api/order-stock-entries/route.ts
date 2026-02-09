@@ -4,6 +4,21 @@ import { requireAuth, isAuthError } from "@/lib/auth/guards";
 import { canUseWarehouseEntry } from "@/lib/rbac";
 import { calculateReadyMetrics, deriveOrderStatusFromReady } from "@/lib/order-ready";
 import { isMissingTableError } from "@/lib/supabase/postgrest-errors";
+import { insertVirtualRow, listVirtualRows } from "@/lib/virtual-store";
+
+type VirtualOrderStockEntry = {
+  id: string;
+  order_id: string;
+  bobbin_label: string;
+  kg: number;
+  notes: string | null;
+  entered_by: string;
+  entered_at: string;
+  created_at: string;
+  updated_at: string;
+};
+
+const VIRTUAL_TABLE = "virtual_order_stock_entries";
 
 async function recalculateStockReadyKgAndStatus(supabase: ReturnType<typeof createAdminClient>, orderId: string) {
   const { data: order, error: orderError } = await supabase
@@ -20,6 +35,36 @@ async function recalculateStockReadyKgAndStatus(supabase: ReturnType<typeof crea
   if (entriesError) return { error: entriesError.message };
 
   const totalStockKg = (allEntries ?? []).reduce((sum: number, e: { kg: number }) => sum + Number(e.kg || 0), 0);
+  const metrics = calculateReadyMetrics(order.quantity, totalStockKg, order.production_ready_kg);
+  const nextStatus = deriveOrderStatusFromReady(order.status, order.source_type, metrics.isReady);
+
+  const updateData: Record<string, unknown> = { stock_ready_kg: totalStockKg };
+  if (nextStatus && nextStatus !== order.status) {
+    updateData.status = nextStatus;
+  }
+
+  const { error: updateError } = await supabase
+    .from("orders")
+    .update(updateData)
+    .eq("id", orderId);
+  if (updateError) return { error: updateError.message };
+
+  return { totalStockKg };
+}
+
+async function recalculateVirtualStockReadyKgAndStatus(supabase: ReturnType<typeof createAdminClient>, orderId: string) {
+  const { data: order, error: orderError } = await supabase
+    .from("orders")
+    .select("id, quantity, status, source_type, production_ready_kg")
+    .eq("id", orderId)
+    .single();
+  if (orderError || !order) return { error: orderError?.message || "Sipariş bulunamadı" };
+
+  const allEntries = await listVirtualRows<VirtualOrderStockEntry>(supabase, VIRTUAL_TABLE, {
+    eq: { order_id: orderId },
+    limit: 15000,
+  });
+  const totalStockKg = allEntries.reduce((sum: number, e) => sum + Number(e.kg || 0), 0);
   const metrics = calculateReadyMetrics(order.quantity, totalStockKg, order.production_ready_kg);
   const nextStatus = deriveOrderStatusFromReady(order.status, order.source_type, metrics.isReady);
 
@@ -63,7 +108,24 @@ export async function GET(
     .order("entered_at", { ascending: false });
 
   if (error) {
-    if (isMissingTableError(error, "order_stock_entries")) return NextResponse.json([]);
+    if (isMissingTableError(error, "order_stock_entries")) {
+      const rows = await listVirtualRows<VirtualOrderStockEntry>(supabase, VIRTUAL_TABLE, {
+        eq: { order_id: orderId },
+        limit: 15000,
+      });
+      const enteredByIds = Array.from(new Set(rows.map((r) => r.entered_by).filter(Boolean)));
+      const { data: profiles } = enteredByIds.length > 0
+        ? await supabase.from("profiles").select("id, full_name").in("id", enteredByIds)
+        : { data: [] as Array<{ id: string; full_name: string }> };
+      const profileMap = new Map((profiles ?? []).map((p: { id: string }) => [p.id, p]));
+      const enriched = rows
+        .sort((a, b) => String(b.entered_at).localeCompare(String(a.entered_at)))
+        .map((row) => ({
+          ...row,
+          entered_by_profile: profileMap.get(row.entered_by) ?? null,
+        }));
+      return NextResponse.json(enriched);
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
   return NextResponse.json(data ?? []);
@@ -127,10 +189,22 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (error && isMissingTableError(error, "order_stock_entries")) {
-    return NextResponse.json(
-      { error: "Depo giriş altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
-      { status: 503 }
-    );
+    const now = new Date().toISOString();
+    const virtual = await insertVirtualRow<VirtualOrderStockEntry>(supabase, VIRTUAL_TABLE, auth.userId, {
+      order_id: String(entryData.order_id),
+      bobbin_label: String(entryData.bobbin_label),
+      kg: Number(entryData.kg),
+      notes: entryData.notes ? String(entryData.notes) : null,
+      entered_by: auth.userId,
+      entered_at: now,
+      created_at: now,
+      updated_at: now,
+    } as VirtualOrderStockEntry);
+
+    const recalcVirtual = await recalculateVirtualStockReadyKgAndStatus(supabase, String(entryData.order_id));
+    if ("error" in recalcVirtual) return NextResponse.json({ error: recalcVirtual.error }, { status: 500 });
+
+    return NextResponse.json({ ...virtual, warnings: [] }, { status: 201 });
   }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 

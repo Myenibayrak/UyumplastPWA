@@ -4,6 +4,25 @@ import { requireAuth, isAuthError } from "@/lib/auth/guards";
 import { canCompleteShipping, canManageShippingSchedule, canViewShippingSchedule } from "@/lib/rbac";
 import { shippingScheduleUpdateSchema } from "@/lib/validations";
 import { isMissingTableError } from "@/lib/supabase/postgrest-errors";
+import { deleteVirtualRow, getVirtualRowById, updateVirtualRow } from "@/lib/virtual-store";
+
+type VirtualShippingRow = {
+  id: string;
+  order_id: string;
+  scheduled_date: string;
+  scheduled_time: string | null;
+  sequence_no: number;
+  status: "planned" | "completed" | "cancelled";
+  notes: string | null;
+  carry_count: number;
+  created_by: string;
+  completed_by: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+const VIRTUAL_TABLE = "virtual_shipping_schedules";
 
 export async function GET(_request: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireAuth();
@@ -27,10 +46,35 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
 
   if (error || !data) {
     if (isMissingTableError(error, "shipping_schedules")) {
-      return NextResponse.json(
-        { error: "Sevkiyat programı altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
-        { status: 503 }
-      );
+      const row = await getVirtualRowById<VirtualShippingRow>(supabase, VIRTUAL_TABLE, params.id);
+      if (!row) return NextResponse.json({ error: "Plan bulunamadı" }, { status: 404 });
+
+      const [orderRes, creatorRes, completerRes] = await Promise.all([
+        supabase
+          .from("orders")
+          .select("id, order_no, customer, product_type, quantity, unit, priority, status, ship_date")
+          .eq("id", row.order_id)
+          .maybeSingle(),
+        supabase
+          .from("profiles")
+          .select("id, full_name, role")
+          .eq("id", row.created_by)
+          .maybeSingle(),
+        row.completed_by
+          ? supabase
+              .from("profiles")
+              .select("id, full_name, role")
+              .eq("id", row.completed_by)
+              .maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
+      ]);
+
+      return NextResponse.json({
+        ...row,
+        order: orderRes.data ?? null,
+        creator: creatorRes.data ?? null,
+        completer: completerRes.data ?? null,
+      });
     }
     return NextResponse.json({ error: error?.message || "Plan bulunamadı" }, { status: 404 });
   }
@@ -62,23 +106,40 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   }
 
   const supabase = createAdminClient();
-  const { error: probeError } = await supabase
-    .from("shipping_schedules")
-    .select("id")
-    .limit(1);
-  if (probeError && isMissingTableError(probeError, "shipping_schedules")) {
-    return NextResponse.json(
-      { error: "Sevkiyat programı altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
-      { status: 503 }
-    );
-  }
-
   const { data: before, error: beforeError } = await supabase
     .from("shipping_schedules")
     .select("*")
     .eq("id", params.id)
     .single();
-  if (beforeError || !before) return NextResponse.json({ error: beforeError?.message || "Plan bulunamadı" }, { status: 404 });
+  if (beforeError || !before) {
+    if (isMissingTableError(beforeError, "shipping_schedules")) {
+      const virtualBefore = await getVirtualRowById<VirtualShippingRow>(supabase, VIRTUAL_TABLE, params.id);
+      if (!virtualBefore) return NextResponse.json({ error: "Plan bulunamadı" }, { status: 404 });
+
+      const patch: Partial<VirtualShippingRow> = { ...parsed.data };
+      if (parsed.data.status === "completed") {
+        patch.completed_by = auth.userId;
+        patch.completed_at = new Date().toISOString();
+      } else if (parsed.data.status) {
+        patch.completed_by = null;
+        patch.completed_at = null;
+      }
+
+      const updated = await updateVirtualRow<VirtualShippingRow>(supabase, VIRTUAL_TABLE, auth.userId, params.id, patch);
+      if (!updated) return NextResponse.json({ error: "Plan bulunamadı" }, { status: 404 });
+
+      if (parsed.data.status === "completed") {
+        await supabase
+          .from("orders")
+          .update({ status: "shipped" })
+          .eq("id", virtualBefore.order_id)
+          .in("status", ["ready", "confirmed", "in_production"]);
+      }
+
+      return NextResponse.json(updated);
+    }
+    return NextResponse.json({ error: beforeError?.message || "Plan bulunamadı" }, { status: 404 });
+  }
 
   const updateData: Record<string, unknown> = { ...parsed.data };
   if (parsed.data.status === "completed") {
@@ -125,25 +186,23 @@ export async function DELETE(_request: NextRequest, { params }: { params: { id: 
   }
 
   const supabase = createAdminClient();
-  const { error: probeError } = await supabase
-    .from("shipping_schedules")
-    .select("id")
-    .limit(1);
-  if (probeError && isMissingTableError(probeError, "shipping_schedules")) {
-    return NextResponse.json(
-      { error: "Sevkiyat programı altyapısı hazır değil. Veritabanı kurulumunu tamamlayın." },
-      { status: 503 }
-    );
-  }
-
   const { data: before } = await supabase
     .from("shipping_schedules")
     .select("*")
     .eq("id", params.id)
     .single();
-  if (!before) return NextResponse.json({ error: "Plan bulunamadı" }, { status: 404 });
+  if (!before) {
+    const deleted = await deleteVirtualRow<VirtualShippingRow>(supabase, VIRTUAL_TABLE, auth.userId, params.id);
+    if (!deleted) return NextResponse.json({ error: "Plan bulunamadı" }, { status: 404 });
+    return NextResponse.json({ success: true });
+  }
 
   const { error } = await supabase.from("shipping_schedules").delete().eq("id", params.id);
+  if (error && isMissingTableError(error, "shipping_schedules")) {
+    const deleted = await deleteVirtualRow<VirtualShippingRow>(supabase, VIRTUAL_TABLE, auth.userId, params.id);
+    if (!deleted) return NextResponse.json({ error: "Plan bulunamadı" }, { status: 404 });
+    return NextResponse.json({ success: true });
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   await supabase.from("audit_logs").insert({
